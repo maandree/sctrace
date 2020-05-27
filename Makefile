@@ -5,7 +5,7 @@ include $(CONFIGFILE)
 
 all: sctrace
 
-sctrace: sctrace.c
+sctrace: sctrace.c arg.h
 	$(CC) -o $@ $@.c $(CPPFLAGS) $(CFLAGS) $(LDFLAGS)
 
 install: sctrace

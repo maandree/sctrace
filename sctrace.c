@@ -59,6 +59,8 @@ usage(void)
 static char *
 get_string_or_memory(pid_t pid, unsigned long int addr, size_t m, int string, const char **errorp)
 {
+	/* TODO use process_vm_readv if supported  */
+
 	size_t orig_addr = (size_t)addr;
 	size_t off;
 	char *ret = NULL;

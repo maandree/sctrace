@@ -25,6 +25,7 @@
 #include <fcntl.h>
 
 #include "arg.h"
+#include "list-errnos.h"
 
 
 char *argv0;
@@ -54,6 +55,20 @@ usage(void)
 {
 	fprintf(stderr, "usage: %s [-f trace-output-file] command ...\n", argv0);
 	exit(1);
+}
+
+
+static const char *
+get_errno_name(int err)
+{
+	static char buf[3 * sizeof(err) + 2];
+
+#define X(N) if (err == N) return #N;
+	LIST_ERRNOS(X)
+#undef X
+
+	sprintf(buf, "%i", err);
+	return buf;
 }
 
 
@@ -162,7 +177,7 @@ utf8len(char *str)
 	return 0;
 
 found:
-	code = (uint32_t)(s[0] & lookup[ext].mask);
+	code = s[0] & lookup[ext].mask;
 	len = ext + 1;
 	for (i = 1; i < len; i++) {
 		if ((s[i] & 0xC0) != 0x80)
@@ -781,6 +796,7 @@ main(int argc, char **argv)
 	char *outfile = NULL;
 	FILE *outfp = stderr;
 	const char *num = NULL;
+	int err;
 
 	/* TODO add option to trace children */
 	/* TODO add option to trace threads */
@@ -909,35 +925,39 @@ have_outfp:
 		}
 
 		/* Print system call result */
-		/* TODO print error name (not one all system calls) */
 		if (ret_type == Int)
-			fprintf(outfp, " = %i\n", (int)regs.rax);
+			fprintf(outfp, " = %i", (int)regs.rax);
 		else if (ret_type == UInt)
-			fprintf(outfp, " = %u\n", (unsigned int)regs.rax);
+			fprintf(outfp, " = %u", (unsigned int)regs.rax);
 		else if (ret_type == OInt)
-			fprintf(outfp, " = %#o\n", (unsigned int)regs.rax);
+			fprintf(outfp, " = %#o", (unsigned int)regs.rax);
 		else if (ret_type == XInt)
-			fprintf(outfp, " = %#x\n", (unsigned int)regs.rax);
+			fprintf(outfp, " = %#x", (unsigned int)regs.rax);
 		else if (ret_type == Long)
-			fprintf(outfp, " = %li\n", (long int)regs.rax);
+			fprintf(outfp, " = %li", (long int)regs.rax);
 		else if (ret_type == ULong)
-			fprintf(outfp, " = %lu\n", (unsigned long int)regs.rax);
+			fprintf(outfp, " = %lu", (unsigned long int)regs.rax);
 		else if (ret_type == OLong)
-			fprintf(outfp, " = %#lo\n", (unsigned long int)regs.rax);
+			fprintf(outfp, " = %#lo", (unsigned long int)regs.rax);
 		else if (ret_type == XLong)
-			fprintf(outfp, " = %#lx\n", (unsigned long int)regs.rax);
+			fprintf(outfp, " = %#lx", (unsigned long int)regs.rax);
 		else if (ret_type == LLong)
-			fprintf(outfp, " = %lli\n", (long long int)regs.rax);
+			fprintf(outfp, " = %lli", (long long int)regs.rax);
 		else if (ret_type == ULLong)
-			fprintf(outfp, " = %llu\n", (unsigned long long int)regs.rax);
+			fprintf(outfp, " = %llu", (unsigned long long int)regs.rax);
 		else if (ret_type == OLLong)
-			fprintf(outfp, " = %#llo\n", (unsigned long long int)regs.rax);
+			fprintf(outfp, " = %#llo", (unsigned long long int)regs.rax);
 		else if (ret_type == XLLong)
-			fprintf(outfp, " = %#llx\n", (unsigned long long int)regs.rax);
+			fprintf(outfp, " = %#llx", (unsigned long long int)regs.rax);
 		else if (ret_type == Ptr && (long long int)regs.rax >= 0)
-			fprintf(outfp, " = %p\n", (void *)regs.rax);
+			fprintf(outfp, " = %p", (void *)regs.rax);
 		else
-			fprintf(outfp, " = %li\n", (long int)regs.rax);
+			fprintf(outfp, " = %li", (long int)regs.rax);
+		if ((unsigned long long int)regs.rax > -(unsigned long long int)PAGE_SIZE) {
+			err = -(int)regs.rax;
+			fprintf(outfp, " (%s: %s)", get_errno_name(err), strerror(err));
+		}
+		fprintf(outfp, "\n");
 	}
 
 	fclose(outfp);

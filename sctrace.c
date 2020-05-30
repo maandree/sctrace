@@ -8,7 +8,7 @@ char *argv0;
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: %s [-o trace-output-file] [-f] (command | -0 command argv0) [argument] ...\n", argv0);
+	fprintf(stderr, "usage: %s [-o trace-output-file] [-ft] (command | -0 command argv0) [argument] ...\n", argv0);
 	exit(1);
 }
 
@@ -42,6 +42,7 @@ handle_syscall(struct process *proc)
 		break;
 
 	case Syscall:
+	case CloneParent:
 	case ForkParent:
 		/* Get system call result */
 		if (ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs))
@@ -82,6 +83,7 @@ handle_syscall(struct process *proc)
 		proc->state = Syscall;
 		break;
 
+	case CloneChild:
 	case ForkChild:
 	case VforkChild:
 		tprintf(proc, "= 0\n");
@@ -104,7 +106,6 @@ main(int argc, char **argv)
 	struct process *proc, *proc2;
 	unsigned long int event;
 
-	/* TODO add option to trace threads (-t) */
 	/* TODO add option to trace signals (-s) */
 	ARGBEGIN {
 	case '0':
@@ -118,6 +119,9 @@ main(int argc, char **argv)
 	case 'f':
 		trace_options |= PTRACE_O_TRACEFORK;
 		trace_options |= PTRACE_O_TRACEVFORK;
+		/* fall through */
+	case 't':
+		trace_options |= PTRACE_O_TRACECLONE;
 		multiprocess = 1;
 		break;
 	default:
@@ -226,20 +230,24 @@ have_outfp:
 					tprintf(proc, "\nProcess stopped by vfork until child exits or exec(2)s\n");
 					/* fall thought */
 				case PTRACE_EVENT_FORK:
+				case PTRACE_EVENT_CLONE:
 					if (ptrace(PTRACE_GETEVENTMSG, proc->pid, NULL, &event))
 						eprintf("ptrace PTRACE_GETEVENTMSG %ju NULL <buffer>:", (uintmax_t)proc->pid);
 					proc2 = add_process((pid_t)event, trace_options);
+					if (trace_event == PTRACE_EVENT_CLONE)
+						proc2->thread_group_leader = proc->pid;
 					proc->ret = event;
 					if (trace_event == PTRACE_EVENT_VFORK) {
 						proc2->continue_on_exit = proc;
 						proc->vfork_waiting_on = proc2;
 						proc->state = VforkParent;
 					} else {
-						proc->state = ForkParent;
+						proc->state = trace_event == PTRACE_EVENT_CLONE ? CloneParent : ForkParent;
 						handle_syscall(proc);
 					}
 					tprintf(proc2, "\nTracing new process\n");
-					proc2->state = trace_event == PTRACE_EVENT_FORK ? ForkChild : VforkChild;
+					proc2->state = trace_event == PTRACE_EVENT_FORK ? ForkChild :
+					               trace_event == PTRACE_EVENT_VFORK ? VforkChild : CloneChild;
 					handle_syscall(proc2);
 					break;
 

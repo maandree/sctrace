@@ -67,8 +67,10 @@ enum type {
 enum state {
 	Normal,
 	Syscall,
+	CloneChild,
 	ForkChild,
 	VforkChild,
+	CloneParent,
 	ForkParent,
 	VforkParent,
 	Exec
@@ -76,6 +78,7 @@ enum state {
 
 struct process {
 	pid_t pid;
+	pid_t thread_group_leader;
 	struct process *next;
 	struct process *prev;
 	enum state state;

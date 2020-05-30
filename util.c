@@ -25,10 +25,17 @@ tprintf(struct process *proc, const char *fmt, ...)
 		fmt = &fmt[1];
 	}
 	if (multiproctrace) {
-		if (last_char == '\n')
-			fprintf(trace_fp, "[%ju] ", (uintmax_t)proc->pid);
-		else if (proc->pid != last_pid)
-			fprintf(trace_fp, "\n[%ju] ", (uintmax_t)proc->pid);
+		if (proc->thread_group_leader) {
+			if (last_char == '\n')
+				fprintf(trace_fp, "[%ju, %ju] ", (uintmax_t)proc->thread_group_leader, (uintmax_t)proc->pid);
+			else if (proc->pid != last_pid)
+				fprintf(trace_fp, "\n[%ju, %ju] ", (uintmax_t)proc->thread_group_leader, (uintmax_t)proc->pid);
+		} else {
+			if (last_char == '\n')
+				fprintf(trace_fp, "[%ju] ", (uintmax_t)proc->pid);
+			else if (proc->pid != last_pid)
+				fprintf(trace_fp, "\n[%ju] ", (uintmax_t)proc->pid);
+		}
 	}
 	va_start(ap, fmt);
 	vfprintf(trace_fp, fmt, ap);

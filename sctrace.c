@@ -100,7 +100,7 @@ get_struct(pid_t pid, unsigned long int addr, void *out, size_t size, const char
 	inv.iov_len   = size;
 	outv.iov_base = out;
 	outv.iov_len  = size;
-	if (process_vm_readv(pid, &outv, 1, &inv, 1, 0) == size)
+	if (process_vm_readv(pid, &outv, 1, &inv, 1, 0) == (ssize_t)size)
 		return 0;
 	*errorp = errno == EFAULT ? "<invalid address>" : "<an error occured during reading of string>";
 	return -1;
@@ -138,10 +138,11 @@ add_char(char **strp, size_t *sizep, size_t *lenp, char c)
 
 
 static size_t
-utf8len(char *s)
+utf8len(char *str)
 {
-	size_t rank, i, len;
+	size_t ext, i, len;
 	uint32_t code;
+	uint8_t *s = (uint8_t *)str;
 
 	struct {
 		uint8_t  lower;
@@ -155,21 +156,21 @@ utf8len(char *s)
 		{ 0xF0, 0xF7, 0x07, UINT32_C(0x010000) }
 	};
 
-	for (rank = 0; rank < sizeof(lookup) / sizeof(*lookup); rank++)
-		if (lookup[rank].lower <= *(uint8_t *)s && *(uint8_t *)s <= lookup[rank].upper)
+	for (ext = 0; ext < sizeof(lookup) / sizeof(*lookup); ext++)
+		if (lookup[ext].lower <= s[0] && s[0] <= lookup[ext].upper)
 			goto found;
 	return 0;
 
 found:
-	code = (uint32_t)(*(uint8_t *)s & lookup[rank].mask);
-	len = rank + 1;
+	code = (uint32_t)(s[0] & lookup[ext].mask);
+	len = ext + 1;
 	for (i = 1; i < len; i++) {
 		if ((s[i] & 0xC0) != 0x80)
 			return 0;
-		code = (code << 6) | (uint32_t)(s[i] & 0x3F);
+		code = (code << 6) | (s[i] ^ 0x80);
 	}
 
-	if (code < lookup[rank].lowest || (0xD800 <= code && code <= 0xDFFF) || code > UINT32_C(0x10FFFF))
+	if (code < lookup[ext].lowest || (0xD800 <= code && code <= 0xDFFF) || code > UINT32_C(0x10FFFF))
 		return 0;
 	return len;
 }

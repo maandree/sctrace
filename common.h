@@ -28,6 +28,24 @@
 #include "list-errnos.h"
 
 
+#ifndef ERESTARTSYS
+# define ERESTARTSYS    512
+# define ALSO_ERESTARTSYS
+#endif
+#ifndef ERESTARTNOINTR
+# define ERESTARTNOINTR 513
+# define ALSO_ERESTARTNOINTR
+#endif
+#ifndef ERESTARTNOHAND
+# define ERESTARTNOHAND 514
+# define ALSO_ERESTARTNOHAND
+#endif
+#ifndef ERESTART_RESTARTBLOCK
+# define ERESTART_RESTARTBLOCK 516
+# define ALSO_ERESTART_RESTARTBLOCK
+#endif
+
+
 enum type {
 	Unknown,
 	Void,
@@ -48,7 +66,11 @@ enum type {
 
 enum state {
 	Normal,
-	Syscall
+	Syscall,
+	ForkChild,
+	VforkChild,
+	ForkParent,
+	VforkParent
 };
 
 struct process {
@@ -62,6 +84,10 @@ struct process {
 	unsigned long long int args[6];
 	unsigned long long int ret;
 	enum type ret_type;
+
+	/* vfork(2) data */
+	struct process *continue_on_exit;
+	struct process *vfork_waiting_on;
 };
 
 
@@ -81,7 +107,7 @@ void print_systemcall_exit(struct process *proc);
 /* process.c */
 void init_process_list(void);
 struct process *find_process(pid_t pid);
-struct process *add_process(pid_t pid, int trace_options);
+struct process *add_process(pid_t pid, unsigned long int trace_options);
 void remove_process(struct process *proc);
 
 /* util.c */

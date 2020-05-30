@@ -26,7 +26,7 @@ find_process(pid_t pid)
 
 
 struct process *
-add_process(pid_t pid, int trace_options)
+add_process(pid_t pid, unsigned long int trace_options)
 {
         struct process *proc;
 	int saved_errno;
@@ -45,8 +45,8 @@ add_process(pid_t pid, int trace_options)
 		errno = saved_errno;
 		eprintf("ptrace PTRACE_SETOPTIONS %ju 0 ...:", (uintmax_t)pid);
 	}
-        if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
-                eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)pid);
+	if (ptrace(PTRACE_SYSCALL, pid, NULL, 0))
+		eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)pid);
         proc->next = &tail;
 	proc->prev = tail.prev;
 	proc->prev->next = proc;
@@ -60,5 +60,9 @@ remove_process(struct process *proc)
 {
  	proc->prev->next = proc->next;
 	proc->next->prev = proc->prev;
+	if (proc->vfork_waiting_on)
+		proc->vfork_waiting_on->continue_on_exit = NULL;
+	if (proc->continue_on_exit)
+		proc->continue_on_exit->vfork_waiting_on = NULL;
 	free(proc);
 }

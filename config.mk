@@ -2,5 +2,5 @@ PREFIX    = /usr
 MANPREFIX = $(PREFIX)/share/man
 
 CPPFLAGS = -D_XOPEN_SOURCE=700 -D_GNU_SOURCE
-CFLAGS   = -std=c99 -Wall -O2
-LDFLAGS  = -s
+CFLAGS   = -std=c11 -Wall -Og -g
+LDFLAGS  =

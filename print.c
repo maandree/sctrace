@@ -140,12 +140,12 @@ print_systemcall(struct process *proc)
 		break
 #define SIMPLE(NAME, FMT, RET_TYPE)\
 	case SYS_##NAME:\
-		printf_systemcall(proc, #NAME, (FMT), args);\
+		printf_systemcall(proc, #NAME, (FMT));\
 		proc->ret_type = (RET_TYPE);\
 		break	
 #define FORMATTERS(NAME, FMT, RET_TYPE, ...)\
 	case SYS_##NAME:\
-		printf_systemcall(proc, #NAME, (FMT), args, __VA_ARGS__);\
+		printf_systemcall(proc, #NAME, (FMT), __VA_ARGS__);\
 		proc->ret_type = (RET_TYPE);\
 		break	
 

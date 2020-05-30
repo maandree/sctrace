@@ -63,7 +63,7 @@ get_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp)
 	struct iovec inv, outv;
 	size_t off = 0, size = 0, page_off, read_size;
 	char *out = NULL, *in = (char *)addr, *p;
-	page_off = (size_t)addr - ((size_t)addr & -sizeof(PAGE_SIZE));
+	page_off = (size_t)addr % sizeof(PAGE_SIZE);
 	read_size = PAGE_SIZE - page_off;
 	*errorp = NULL;
 	for (;; read_size = PAGE_SIZE) {

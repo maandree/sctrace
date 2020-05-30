@@ -145,7 +145,7 @@ main(int argc, char **argv)
 		}
 		/* exec will block until parent attaches */
 		execvp(*argv, &argv[with_argv0]);
-		/* TODO on failure, why does it get into a SIGSEGV loop under valgrind? */
+		kill(getppid(), SIGKILL);
 		eprintf("execvp %s:", *argv);
 	default:
 		orig_pid = pid;

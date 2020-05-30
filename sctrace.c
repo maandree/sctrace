@@ -5,6 +5,7 @@
 
 #include <sys/ptrace.h>
 #include <sys/syscall.h>
+#include <sys/uio.h>
 #include <sys/user.h>
 #include <sys/wait.h>
 #include <ctype.h>
@@ -57,92 +58,69 @@ usage(void)
 
 
 static char *
-get_string_or_memory(pid_t pid, unsigned long int addr, size_t m, int string, const char **errorp)
+get_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp)
 {
-	/* TODO use process_vm_readv if supported  */
-
-	size_t orig_addr = (size_t)addr;
-	size_t off;
-	char *ret = NULL;
-	size_t size = 0;
-	size_t len = 0;
-	size_t i;
-	union {
-		long int value;
-		char bytes[sizeof(long int)];
-	} u;
-
+	struct iovec inv, outv;
+	size_t off = 0, size = 0, page_off, read_size;
+	char *out = NULL, *in = (char *)addr, *p;
+	page_off = (size_t)addr - ((size_t)addr & -sizeof(PAGE_SIZE));
+	read_size = PAGE_SIZE - page_off;
 	*errorp = NULL;
-
-	if (!addr)
-		return NULL;
-
-	addr &= -sizeof(long int);
-	off = orig_addr - (size_t)addr;
-
-	for (;;) {
-		errno = 0;
-		u.value = ptrace(PTRACE_PEEKDATA, pid, addr, 0);
-		switch (errno) {
-		case 0:
-			break;
-		case EFAULT:
-			*errorp = "<invalid address>";
-			return NULL;
-		default:
-			*errorp = "<an error occured during reading of string>";
-			return NULL;
+	for (;; read_size = PAGE_SIZE) {
+		out = realloc(out, size + PAGE_SIZE);
+		if (!out) {
+			fprintf(stderr, "%s: realloc: %s\n", argv0, strerror(errno));
+			exit(1);
 		}
-
-		addr += sizeof(long int);
-		if (size - len < sizeof(long int)) {
-			ret = realloc(ret, size += sizeof(long int) * 32);
-			if (!ret) {
-				fprintf(stderr, "%s: realloc: %s\n", argv0, strerror(errno));
-				exit(1);
-			}
+		inv.iov_base  = &in[off];
+		inv.iov_len   = read_size;
+		outv.iov_base = &out[off];
+		outv.iov_len  = read_size;
+		if (process_vm_readv(pid, &outv, 1, &inv, 1, 0) != (ssize_t)read_size) {
+			*errorp = errno == EFAULT ? "<invalid address>" : "<an error occured during reading of string>";
+			*lenp = 0;
+			return 0;
 		}
-		if (string) {
-			for (i = off; i < sizeof(u.bytes); i++, len++) {
-				ret[len] = u.bytes[i];
-				if (!ret[len])
-					return ret;
-			}
-		} else {
-			for (i = off; i < sizeof(u.bytes) && len < m; i++, len++)
-				ret[len] = u.bytes[i];
-			if (len == m)
-				return ret;
+		p = memchr(&out[off], 0, read_size);
+		if (p) {
+			*lenp = (size_t)(p - out);
+			return out;
 		}
-		off = 0;
+		off += read_size;
 	}
-}
-
-
-static char *
-get_memory(pid_t pid, unsigned long int addr, size_t m, const char **errorp)
-{
-	return get_string_or_memory(pid, addr, m, 0, errorp);
-}
-
-
-static char *
-get_string(pid_t pid, unsigned long int addr, const char **errorp)
-{
-	return get_string_or_memory(pid, addr, 0, 1, errorp);
 }
 
 
 static int
 get_struct(pid_t pid, unsigned long int addr, void *out, size_t size, const char **errorp)
 {
-	char *data = get_string_or_memory(pid, addr, size, 0, errorp);
-	if (!data)
-		return -1;
-	memcpy(out, data, size);
-	free(data);
-	return 0;
+	struct iovec inv, outv;
+	*errorp = NULL;
+	inv.iov_base  = (void *)addr;
+	inv.iov_len   = size;
+	outv.iov_base = out;
+	outv.iov_len  = size;
+	if (process_vm_readv(pid, &outv, 1, &inv, 1, 0) == size)
+		return 0;
+	*errorp = errno == EFAULT ? "<invalid address>" : "<an error occured during reading of string>";
+	return -1;
 }
+
+static char *
+get_memory(pid_t pid, unsigned long int addr, size_t n, const char **errorp)
+{
+	char *out = malloc(n + (size_t)!n);
+	if (!out) {
+		fprintf(stderr, "%s: malloc: %s\n", argv0, strerror(errno));
+		exit(1);
+	}
+	if (get_struct(pid, addr, out, n, errorp)) {
+		free(out);
+		return NULL;
+	}
+	return out;
+}
+
 
 
 static void
@@ -272,13 +250,6 @@ escape_memory(char *str, size_t m)
 }
 
 
-static char *
-escape_string(char *str)
-{
-	return escape_memory(str, str ? strlen(str) : 0);
-}
-
-
 static void
 fprint_clockid(FILE *fp, pid_t pid, unsigned long int args[6], size_t arg_index) /* TODO */
 {
@@ -305,7 +276,7 @@ fprint_systemcall(FILE *fp, pid_t pid, const char *scall, const char *fmt, unsig
 {
 	typedef char *(*Function)(FILE *fp, pid_t pid, unsigned long int args[6], size_t arg_index);
 	Function funcs[6];
-	size_t i, nfuncs = 0, func;
+	size_t i, nfuncs = 0, func, len;
 	int ells = 0;
 	char *str;
 	const char *err;
@@ -341,7 +312,8 @@ fprint_systemcall(FILE *fp, pid_t pid, const char *scall, const char *fmt, unsig
 				funcs[nfuncs++] = va_arg(ap, Function);
 			funcs[func - 1](fp, pid, args, i);
 		} else if (*fmt == 's') {
-			str = escape_string(get_string(pid, args[i], &err));
+			str = get_string(pid, args[i], &len, &err);
+			str = escape_memory(str, len);
 			fprintf(fp, "%s", str ? str : err);
 			free(str);
 		} else if (*fmt == 'm') {
@@ -426,6 +398,7 @@ print_systemcall(FILE *fp, pid_t pid, unsigned long long int scall, unsigned lon
 
 	*ret_type = Unknown;
 
+	/* TODO replace GENERIC_HANDLER with specific handlers */
 	switch (scall) {
 	GENERIC_HANDLER(_sysctl);
 	SIMPLE(accept, "ipp", Int); /* TODO output */
@@ -808,6 +781,9 @@ main(int argc, char **argv)
 	FILE *outfp = stderr;
 	const char *num = NULL;
 
+	/* TODO add option to trace children */
+	/* TODO add option to trace threads */
+	/* TODO add option to specify argv[0] */
 	ARGBEGIN {
 	case 'f':
 		if (outfile)

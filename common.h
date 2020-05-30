@@ -112,6 +112,6 @@ struct process *add_process(pid_t pid, unsigned long int trace_options);
 void remove_process(struct process *proc);
 
 /* util.c */
-void set_trace_output(FILE *fp);
+void setup_trace_output(FILE *fp, int multiprocess);
 void tprintf(struct process *proc, const char *fmt, ...);
 _Noreturn void eprintf(const char *fmt, ...);

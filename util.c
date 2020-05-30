@@ -5,11 +5,13 @@
 static FILE *trace_fp;
 static char last_char = '\n';
 static pid_t last_pid = 0;
+static int multiproctrace;
 
 
 void
-set_trace_output(FILE *fp)
+setup_trace_output(FILE *fp, int multiprocess)
 {
+	multiproctrace = multiprocess;
 	trace_fp = fp;
 }
 
@@ -22,10 +24,12 @@ tprintf(struct process *proc, const char *fmt, ...)
 		last_pid = 0;
 		fmt = &fmt[1];
 	}
-	if (last_char == '\n')
-		fprintf(trace_fp, "[%ju] ", (uintmax_t)proc->pid);
-	else if (proc->pid != last_pid)
-		fprintf(trace_fp, "\n[%ju] ", (uintmax_t)proc->pid);
+	if (multiproctrace) {
+		if (last_char == '\n')
+			fprintf(trace_fp, "[%ju] ", (uintmax_t)proc->pid);
+		else if (proc->pid != last_pid)
+			fprintf(trace_fp, "\n[%ju] ", (uintmax_t)proc->pid);
+	}
 	va_start(ap, fmt);
 	vfprintf(trace_fp, fmt, ap);
 	last_pid = proc->pid;

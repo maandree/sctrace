@@ -99,7 +99,7 @@ main(int argc, char **argv)
 	char *outfile = NULL;
 	FILE *outfp = stderr;
 	const char *num = NULL;
-	int status, exit_value = 0, trace_event, with_argv0 = 0;
+	int status, exit_value = 0, trace_event, with_argv0 = 0, multiprocess = 0;
 	unsigned long int trace_options = PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC;
 	struct process *proc, *proc2;
 	unsigned long int event;
@@ -118,6 +118,7 @@ main(int argc, char **argv)
 	case 'f':
 		trace_options |= PTRACE_O_TRACEFORK;
 		trace_options |= PTRACE_O_TRACEVFORK;
+		multiprocess = 1;
 		break;
 	default:
 		usage();
@@ -184,7 +185,7 @@ main(int argc, char **argv)
 	}
 
 have_outfp:
-	set_trace_output(outfp);
+	setup_trace_output(outfp, multiprocess);
 
 	for (;;) {
 		pid = wait(&status);

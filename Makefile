@@ -3,10 +3,27 @@
 CONFIGFILE = config.mk
 include $(CONFIGFILE)
 
-all: sctrace
+OBJ =\
+	consts.o\
+	memory.o\
+	print.o\
+	process.o\
+	sctrace.o\
+	util.o
 
-sctrace: sctrace.c arg.h list-errnos.h
-	$(CC) -o $@ $@.c $(CPPFLAGS) $(CFLAGS) $(LDFLAGS)
+HDR =\
+	arg.h\
+	common.h\
+	list-errnos.h
+
+all: sctrace
+$(OBJ): $(@:.o=.c) $(HDR)
+
+sctrace: $(OBJ)
+	$(CC) -o $@ $(OBJ) $(LDFLAGS)
+
+.c.o:
+	$(CC) -c -o $@ $< $(CPPFLAGS) $(CFLAGS)
 
 list-errnos.h:
 	printf '#define LIST_ERRNOS(_)\\\n\t' > $@
@@ -24,5 +41,8 @@ uninstall:
 
 clean:
 	-rm -f -- *.o list-errnos.h sctrace
+
+.SUFFIXES:
+.SUFFIXES: .c .o
 
 .PHONY: all install uninstall clean

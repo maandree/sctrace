@@ -216,8 +216,8 @@ have_outfp:
 			}
 
 		} else if (WIFSIGNALED(status)) {
-			tprintf(proc, "\nProcess terminated by signal %i (%s)\n", WTERMSIG(status), strsignal(WTERMSIG(status)));
-			/* TODO print signal name */
+			tprintf(proc, "\nProcess terminated by signal %i (%s: %s)\n", WTERMSIG(status),
+			        get_signum_name(WTERMSIG(status)), strsignal(WTERMSIG(status)));
 
 		} else if (WIFSTOPPED(status)) {
 			if (WSTOPSIG(status) == (SIGTRAP | 0x80)) {
@@ -268,8 +268,8 @@ have_outfp:
 				}
 			} else {
 			print_signal:
-				tprintf(proc, "\nProcess stopped by signal %i (%s)\n", WSTOPSIG(status), strsignal(WSTOPSIG(status)));
-				/* TODO print signal name */
+				tprintf(proc, "\nProcess stopped by signal %i (%s: %s)\n", WSTOPSIG(status),
+				        get_signum_name(WSTOPSIG(status)), strsignal(WSTOPSIG(status)));
 				/* TODO handle signals properly */
 				if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
 					eprintf("ptrace PTRACE_SYSCALL %ju NULL 0", (uintmax_t)proc->pid);

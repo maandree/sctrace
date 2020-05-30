@@ -26,3 +26,32 @@ get_errno_name(int err)
 	sprintf(buf, "%i", err);
 	return buf;
 }
+
+
+const char *
+get_signum_name(int sig)
+{
+	static char buf[3 * sizeof(sig) + 2];
+	int above_low, below_high;
+
+#define X(N) if (sig == N) return #N;
+	LIST_SIGNUMS(X)
+#undef X
+
+	if (__SIGRTMIN <= sig && sig <= __SIGRTMAX) {
+		above_low = sig - __SIGRTMIN;
+		below_high = __SIGRTMAX - sig;
+		if (!above_low)
+			return "__SIGRTMIN";
+		if (!below_high)
+			return "__SIGRTMAX";
+		if (above_low <= below_high)
+			sprintf(buf, "__SIGRTMIN+%i", above_low);
+		else
+			sprintf(buf, "__SIGRTMAX-%i", below_high);
+		return buf;
+	}
+
+	sprintf(buf, "%i", sig);
+	return buf;
+}

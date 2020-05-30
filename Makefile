@@ -14,7 +14,8 @@ OBJ =\
 HDR =\
 	arg.h\
 	common.h\
-	list-errnos.h
+	list-errnos.h\
+	list-signums.h
 
 all: sctrace
 $(OBJ): $(@:.o=.c) $(HDR)
@@ -32,6 +33,13 @@ list-errnos.h:
 		| sed -n '/^[ \t]*#[ \t]*define[ \t].*[ \t][0-9]*[ \t]*$$/s/^[ \t#]*define[ \t]*\([^ \t]*\).*$$/_(\1)/p' \
 		| sort | uniq | tr '\n' '#' | sed 's/#_/\\\n\t_/g' | tr '#' '\n' >> $@
 
+list-signums.h:
+	printf '#define LIST_SIGNUMS(_)\\\n\t' > $@
+	cat /usr/include/bits/signum.h /usr/include/bits/signum-generic.h \
+		| sed 's/\/\/.*$$//' | tr -d '$$' | sed 's/\*\//\$$/g' | sed 's/\/\*[^$$]*\$$//g' \
+		| sed -n '/^[ \t]*#[ \t]*define[ \t][^_]*[ \t][0-9]*[ \t]*$$/s/^[ \t#]*define[ \t]*\([^ \t]*\).*$$/_(\1)/p' \
+		| sort | uniq | tr '\n' '#' | sed 's/#_/\\\n\t_/g' | tr '#' '\n' >> $@
+
 install: sctrace
 	mkdir -p -- "$(DESTDIR)$(PREFIX)/bin"
 	cp -- sctrace "$(DESTDIR)$(PREFIX)/bin"
@@ -40,7 +48,7 @@ uninstall:
 	-rm -f -- "$(DESTDIR)$(PREFIX)/bin/sctrace"
 
 clean:
-	-rm -f -- *.o list-errnos.h sctrace
+	-rm -f -- *.o list-*.h sctrace
 
 .SUFFIXES:
 .SUFFIXES: .c .o

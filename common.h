@@ -26,6 +26,7 @@
 
 #include "arg.h"
 #include "list-errnos.h"
+#include "list-signums.h"
 
 
 #ifndef ERESTARTSYS
@@ -97,6 +98,7 @@ struct process {
 
 /* consts.c */
 const char *get_errno_name(int err);
+const char *get_signum_name(int sig);
 
 /* memory.c */
 char *get_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp);

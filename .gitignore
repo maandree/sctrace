@@ -3,4 +3,4 @@
 *.o
 *.su
 /sctrace
-/list-errnos.h
+/list-*.h

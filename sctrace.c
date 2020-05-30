@@ -8,7 +8,7 @@ char *argv0;
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: %s [-o trace-output-file] [-f] command ...\n", argv0);
+	fprintf(stderr, "usage: %s [-o trace-output-file] [-f] (command | -0 command argv0) [argument] ...\n", argv0);
 	exit(1);
 }
 
@@ -91,16 +91,18 @@ main(int argc, char **argv)
 	char *outfile = NULL;
 	FILE *outfp = stderr;
 	const char *num = NULL;
-	int status, exit_value = 0, trace_event;
+	int status, exit_value = 0, trace_event, with_argv0 = 0;
 	unsigned long int trace_options = PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD;
 	struct process *proc, *proc2;
 	unsigned long int event;
 
-	/* TODO add support for exec */
+	/* TODO add support for exec after vfork */
 	/* TODO add option to trace threads (-t) */
 	/* TODO add option to trace signals (-s) */
-	/* TODO add option to specify argv[0] */
 	ARGBEGIN {
+	case '0':
+		with_argv0 = 1;
+		break;
 	case 'o':
 		if (outfile)
 			usage();
@@ -130,7 +132,7 @@ main(int argc, char **argv)
 			return 1;
 		}
 		/* exec will block until parent attaches */
-		execvp(*argv, argv);
+		execvp(*argv, &argv[with_argv0]);
 		eprintf("execvp %s:", *argv);
 	default:
 		orig_pid = pid;

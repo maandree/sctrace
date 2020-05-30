@@ -70,7 +70,8 @@ enum state {
 	ForkChild,
 	VforkChild,
 	ForkParent,
-	VforkParent
+	VforkParent,
+	Exec
 };
 
 struct process {

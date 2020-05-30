@@ -68,6 +68,14 @@ handle_syscall(struct process *proc)
 		proc->state = Normal;
 		break;
 
+	case Exec:
+		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
+			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0", (uintmax_t)proc->pid);
+		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
+			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0", (uintmax_t)proc->pid);
+		proc->state = Normal;
+		break;
+
 	case VforkParent:
 		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
 			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0", (uintmax_t)proc->pid);
@@ -92,11 +100,10 @@ main(int argc, char **argv)
 	FILE *outfp = stderr;
 	const char *num = NULL;
 	int status, exit_value = 0, trace_event, with_argv0 = 0;
-	unsigned long int trace_options = PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD;
+	unsigned long int trace_options = PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC;
 	struct process *proc, *proc2;
 	unsigned long int event;
 
-	/* TODO add support for exec after vfork */
 	/* TODO add option to trace threads (-t) */
 	/* TODO add option to trace signals (-s) */
 	ARGBEGIN {
@@ -198,7 +205,7 @@ have_outfp:
 			proc2 = proc->continue_on_exit;
 			remove_process(proc);
 			if (proc2) {
-				tprintf(proc2, "Process continue do to exit of vfork child\n");
+				tprintf(proc2, "Process continues due to exit of vfork child\n");
 				handle_syscall(proc2);
 			}
 
@@ -232,6 +239,18 @@ have_outfp:
 					tprintf(proc2, "\nTracing new process\n");
 					proc2->state = trace_event == PTRACE_EVENT_FORK ? ForkChild : VforkChild;
 					handle_syscall(proc2);
+					break;
+
+				case PTRACE_EVENT_EXEC:
+					proc->state = Exec;
+					handle_syscall(proc);
+					proc2 = proc->continue_on_exit;
+					if (proc2) {
+						proc->continue_on_exit = NULL;
+						proc2->vfork_waiting_on = NULL;
+						tprintf(proc2, "Process continues due to exec(2) of vfork child\n");
+						handle_syscall(proc2);
+					}
 					break;
 
 				default:

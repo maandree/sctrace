@@ -22,7 +22,8 @@ tprintf(struct process *proc, const char *fmt, ...)
 	va_list ap;
 	if (fmt[0] == '\n' && fmt[1]) {
 		last_pid = 0;
-		fmt = &fmt[1];
+		if (multiproctrace || last_char == '\n')
+			fmt = &fmt[1];
 	}
 	if (multiproctrace) {
 		if (proc->thread_group_leader) {

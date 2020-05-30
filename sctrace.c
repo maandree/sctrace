@@ -56,7 +56,7 @@ handle_syscall(struct process *proc)
 			if (ptrace(PTRACE_SETREGS, proc->pid, NULL, &regs))
 				eprintf("ptrace PTRACE_SETREGS %ju NULL <buffer>:", (uintmax_t)proc->pid);
 			if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
-				eprintf("ptrace PTRACE_SYSCALL %ju NULL 0", (uintmax_t)proc->pid);
+				eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)proc->pid);
 		}
 
 		/* Print system call result */
@@ -64,22 +64,20 @@ handle_syscall(struct process *proc)
 
 		/* Make process continue and stop at next syscall */
 		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
-			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0", (uintmax_t)proc->pid);
+			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)proc->pid);
 
 		proc->state = Normal;
 		break;
 
 	case Exec:
 		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
-			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0", (uintmax_t)proc->pid);
-		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
-			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0", (uintmax_t)proc->pid);
+			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)proc->pid);
 		proc->state = Normal;
 		break;
 
 	case VforkParent:
 		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
-			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0", (uintmax_t)proc->pid);
+			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)proc->pid);
 		proc->state = Syscall;
 		break;
 
@@ -106,7 +104,7 @@ main(int argc, char **argv)
 	struct process *proc, *proc2;
 	unsigned long int event;
 
-	/* TODO add option to trace signals (-s) */
+	/* TODO add option to trace signals with siginfo (-s) */
 	ARGBEGIN {
 	case '0':
 		with_argv0 = 1;
@@ -211,7 +209,7 @@ have_outfp:
 			proc2 = proc->continue_on_exit;
 			remove_process(proc);
 			if (proc2) {
-				tprintf(proc2, "Process continues due to exit of vfork child\n");
+				tprintf(proc2, "\nProcess continues due to exit of vfork child\n");
 				handle_syscall(proc2);
 			}
 
@@ -258,7 +256,7 @@ have_outfp:
 					if (proc2) {
 						proc->continue_on_exit = NULL;
 						proc2->vfork_waiting_on = NULL;
-						tprintf(proc2, "Process continues due to exec(2) of vfork child\n");
+						tprintf(proc2, "\nProcess continues due to exec(2) of vfork child\n");
 						handle_syscall(proc2);
 					}
 					break;
@@ -268,11 +266,11 @@ have_outfp:
 				}
 			} else {
 			print_signal:
-				tprintf(proc, "\nProcess stopped by signal %i (%s: %s)\n", WSTOPSIG(status),
+				tprintf(proc, "\nProcess received signal %i (%s: %s)\n", WSTOPSIG(status),
 				        get_signum_name(WSTOPSIG(status)), strsignal(WSTOPSIG(status)));
-				/* TODO handle signals properly */
-				if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
-					eprintf("ptrace PTRACE_SYSCALL %ju NULL 0", (uintmax_t)proc->pid);
+				/* TODO handle signals properly (siginfo?, SIGSTOP &c does not stop the process) */
+				if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, WSTOPSIG(status)))
+					eprintf("ptrace PTRACE_SYSCALL %ju NULL %i:", (uintmax_t)proc->pid, WSTOPSIG(status));
 			}
 
 		} else if (WIFCONTINUED(status)) {

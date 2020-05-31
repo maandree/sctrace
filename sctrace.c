@@ -63,6 +63,8 @@ handle_syscall(struct process *proc)
 		/* Print system call result */
 		print_systemcall_exit(proc);
 
+		proc->silent_until_execed -= (proc->silent_until_execed == 1);
+
 		/* Make process continue and stop at next syscall */
 		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
 			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)proc->pid);
@@ -71,6 +73,8 @@ handle_syscall(struct process *proc)
 		break;
 
 	case Exec:
+		proc->silent_until_execed -= (proc->silent_until_execed == 2);
+		/* fall through */
 	case VforkParent:
 		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
 			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)proc->pid);
@@ -219,7 +223,7 @@ main(int argc, char **argv)
 	outfp = outfile ? xfopen(outfile, "wb") : stderr;
 	setup_trace_output(outfp, multiprocess);
 	init_process_list();
-	add_process(orig_pid, trace_options);
+	add_process(orig_pid, trace_options)->silent_until_execed = 2;
 
 	for (;;) {
 		pid = waitpid(-1, &status, __WALL | WCONTINUED);

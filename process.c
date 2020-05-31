@@ -29,28 +29,31 @@ struct process *
 add_process(pid_t pid, unsigned long int trace_options)
 {
         struct process *proc;
-	int saved_errno;
+	int status;
+
         proc = calloc(1, sizeof(*proc));
 	if (!proc)
                 eprintf("calloc: %s\n");
         proc->pid = pid;
-	if (waitpid(pid, NULL, 0) < 0) {
-		eprintf("waitpid <child> NULL 0:");
-		kill(pid, SIGKILL);
-		exit(1);
-	}
-	if (ptrace(PTRACE_SETOPTIONS, pid, 0, trace_options)) {
-		saved_errno = errno;
-		kill(pid, SIGKILL);
-		errno = saved_errno;
-		eprintf("ptrace PTRACE_SETOPTIONS %ju 0 ...:", (uintmax_t)pid);
-	}
-	if (ptrace(PTRACE_SYSCALL, pid, NULL, 0))
-		eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)pid);
         proc->next = &tail;
 	proc->prev = tail.prev;
 	proc->prev->next = proc;
 	tail.prev = proc;
+
+	while (waitpid(pid, &status, WSTOPPED) != pid) {
+		if (errno == EINTR)
+			continue;
+		eprintf_and_kill(pid, "waitpid %ju <buffer> WSTOPPED:", (uintmax_t)pid);
+	}
+	if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGSTOP)
+		eprintf_and_kill(pid, "unexpected return of waitpid %ju <buffer> WSTOPPED:", (uintmax_t)pid);
+	if (ptrace(PTRACE_SEIZE, pid, 0, trace_options))
+		eprintf_and_kill(pid, "ptrace PTRACE_SEIZE %ju 0 ...:", (uintmax_t)pid);
+	if (ptrace(PTRACE_INTERRUPT, pid, 0, 0))
+		eprintf_and_kill(pid, "ptrace PTRACE_INTERRUPT %ju 0 0:", (uintmax_t)pid);
+	if (kill(pid, SIGCONT) < 0)
+		eprintf_and_kill(pid, "kill &ju SIGCONT:", (uintmax_t)pid);
+
 	return proc;
 }
 

@@ -3,6 +3,7 @@
 
 
 char *argv0;
+static unsigned long int trace_options = PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC;
 
 
 static void
@@ -70,11 +71,6 @@ handle_syscall(struct process *proc)
 		break;
 
 	case Exec:
-		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
-			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)proc->pid);
-		proc->state = Normal;
-		break;
-
 	case VforkParent:
 		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
 			eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)proc->pid);
@@ -91,18 +87,95 @@ handle_syscall(struct process *proc)
 }
 
 
+static void
+handle_event(struct process *proc, int status)
+{
+	int trace_event, sig;
+	unsigned long int event;
+	struct process *proc2;
+
+	sig = WSTOPSIG(status);
+	trace_event = ((status >> 8) ^ SIGTRAP) >> 8;
+	switch (trace_event) {
+
+	case PTRACE_EVENT_VFORK:
+		tprintf(proc, "\nProcess stopped by vfork until child exits or exec(2)s\n");
+		/* fall thought */
+	case PTRACE_EVENT_FORK:
+	case PTRACE_EVENT_CLONE:
+		if (ptrace(PTRACE_GETEVENTMSG, proc->pid, NULL, &event))
+			eprintf("ptrace PTRACE_GETEVENTMSG %ju NULL <buffer>:", (uintmax_t)proc->pid);
+		proc2 = add_process((pid_t)event, trace_options);
+		if (trace_event == PTRACE_EVENT_CLONE)
+			proc2->thread_leader = proc->pid;
+		proc->ret = event;
+		if (trace_event == PTRACE_EVENT_VFORK) {
+			proc2->continue_on_exit = proc;
+			proc->vfork_waiting_on = proc2;
+			proc->state = VforkParent;
+		} else {
+			proc->state = trace_event == PTRACE_EVENT_CLONE ? CloneParent : ForkParent;
+			handle_syscall(proc);
+		}
+		tprintf(proc2, "\nTracing new process\n");
+		proc2->state = trace_event == PTRACE_EVENT_FORK ? ForkChild :
+			trace_event == PTRACE_EVENT_VFORK ? VforkChild : CloneChild;
+		handle_syscall(proc2);
+		break;
+
+	case PTRACE_EVENT_EXEC:
+		proc->state = Exec;
+		handle_syscall(proc);
+		proc2 = proc->continue_on_exit;
+		if (proc2) {
+			proc->continue_on_exit = NULL;
+			proc2->vfork_waiting_on = NULL;
+			tprintf(proc2, "\nProcess continues due to exec(2) of vfork child\n");
+			handle_syscall(proc2);
+		}
+		break;
+
+	case PTRACE_EVENT_STOP:
+		switch (sig) {
+		case SIGSTOP:
+		case SIGTSTP:
+		case SIGTTIN:
+		case SIGTTOU:
+		stop_signal:
+			tprintf(proc, "\nProcess stopped by signal %i (%s: %s)\n", sig, get_signum_name(sig), strsignal(sig));
+			if (ptrace(PTRACE_LISTEN, proc->pid, NULL, 0))
+				eprintf("ptrace PTRACE_LISTEN %ju NULL 0:", (uintmax_t)proc->pid);
+			break;
+		default:
+			if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
+				eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)proc->pid);
+			break;
+		}
+		break;
+
+	default:
+		abort();
+
+	case 0:
+		/* TODO ensure proper handling of signals (multithreaded?, siginfo?, in new processes?) */
+		if (ptrace(PTRACE_GETSIGINFO, proc->pid, 0, &(siginfo_t){0}))
+			goto stop_signal;
+		tprintf(proc, "\nProcess received signal %i (%s: %s)\n", sig, get_signum_name(sig), strsignal(sig));
+		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, sig))
+			eprintf("ptrace PTRACE_SYSCALL %ju NULL %i:", (uintmax_t)proc->pid, sig);
+		break;
+	}
+}
+
+
 int
 main(int argc, char **argv)
 {
 	pid_t pid, orig_pid;
-	long int tmp;
 	char *outfile = NULL;
 	FILE *outfp = stderr;
-	const char *num = NULL;
-	int status, exit_value = 0, trace_event, with_argv0 = 0, multiprocess = 0;
-	unsigned long int trace_options = PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC;
+	int status, exit_code = 0, with_argv0 = 0, multiprocess = 0;
 	struct process *proc, *proc2;
-	unsigned long int event;
 
 	/* TODO add option to trace signals with siginfo (-s) */
 	ARGBEGIN {
@@ -128,154 +201,67 @@ main(int argc, char **argv)
 	if (!argc)
 		usage();
 
-	init_process_list();
-
 	/* Start program to trace */
-	pid = fork();
-	switch (pid) {
+	orig_pid = fork();
+	switch (orig_pid) {
 	case -1:
 		eprintf("fork:");
-		return 1;
 	case 0:
-		if (ptrace(PTRACE_TRACEME, 0, NULL, 0)) {
-			eprintf("ptrace PTRACE_TRACEME 0 NULL 0:");
-			return 1;
-		}
-		/* exec will block until parent attaches */
+		if (raise(SIGSTOP))
+			eprintf_and_kill(getppid(), "raise SIGSTOP:");
 		execvp(*argv, &argv[with_argv0]);
-		kill(getppid(), SIGKILL);
-		eprintf("execvp %s:", *argv);
+		eprintf_and_kill(getppid(), "execvp %s:", *argv);
 	default:
-		orig_pid = pid;
-		add_process(pid, trace_options);
 		break;
 	}
 
-	/* Open trace output file */
-	if (outfile) {
-		if (!strncmp(outfile, "/dev/fd/", sizeof("/dev/fd/") - 1))
-			num = &outfile[sizeof("/dev/fd/") - 1];
-		else if (!strncmp(outfile, "/proc/self/fd/", sizeof("/proc/self/fd/") - 1))
-			num = &outfile[sizeof("/proc/self/fd/") - 1];
-		else if (!strcmp(outfile, "/dev/stdin"))
-			num = "0";
-		else if (!strcmp(outfile, "/dev/stdout"))
-			num = "1";
-		else if (!strcmp(outfile, "/dev/stderr"))
-			num = "2";
-		if (num && isdigit(*num)) {
-			errno = 0;
-			tmp = strtol(num, (void *)&num, 10);
-			if (!errno && tmp >= 0 &&
-#if INT_MAX < LONG_MAX
-			    tmp < INT_MAX &&
-#endif
-			    !*num) {
-				outfp = fdopen((int)tmp, "wb");
-				if (!outfp) {
-					eprintf("fdopen %li wb:", tmp);
-					return 1;
-				}
-				goto have_outfp;
-			}
-		}
-		outfp = fopen(outfile, "wb");
-		if (!outfp) {
-			eprintf("fopen %s wb:", outfile);
-			return 1;
-		}
-	}
-
-have_outfp:
+	/* TODO need to reset signal handlers and mask */
+	outfp = outfile ? xfopen(outfile, "wb") : stderr;
 	setup_trace_output(outfp, multiprocess);
+	init_process_list();
+	add_process(orig_pid, trace_options);
 
 	for (;;) {
-		pid = wait(&status);
+		pid = waitpid(-1, &status, __WALL | WCONTINUED);
 		if (pid < 0) {
 			if (errno == ECHILD)
-				return exit_value;
-			eprintf("wait <buffer>:");
-			return 1;
+				return WEXITSTATUS(exit_code); /* TODO mimic kill by signal */
+			if (errno == EINTR)
+				continue;
+			eprintf("waitpid -1 <buffer> __WALL:");
 		}
 
 		proc = find_process(pid);
 		if (!proc)
 			continue;
 
-		if (WIFEXITED(status)) {
+		if (WIFSTOPPED(status)) {
+			if (WSTOPSIG(status) == (SIGTRAP | 0x80))
+				handle_syscall(proc);
+			else
+				handle_event(proc, status);
+		} else if (WIFCONTINUED(status)) {
+			tprintf(proc, "\nProcess continued, presumably by signal %i (SIGCONT: %s)\n", SIGCONT, strsignal(SIGCONT));
+		} else {
 			if (pid == orig_pid)
-				exit_value = WEXITSTATUS(status);
-			tprintf(proc, "\nProcess exited with value %i\n", WEXITSTATUS(status));
+				exit_code = status;
+			if (WIFEXITED(status)) {
+				tprintf(proc, "\nProcess exited with value %i\n", WEXITSTATUS(status));
+			} else {
+				tprintf(proc, "\nProcess terminated by signal %i (%s: %s)\n", WTERMSIG(status),
+				        get_signum_name(WTERMSIG(status)), strsignal(WTERMSIG(status)));
+			}
 			proc2 = proc->continue_on_exit;
 			remove_process(proc);
 			if (proc2) {
-				tprintf(proc2, "\nProcess continues due to exit of vfork child\n");
+				if (WIFEXITED(status))
+					tprintf(proc2, "\nProcess continues due to exit of vfork child\n");
+				else
+					tprintf(proc2, "\nProcess continues due to abnormal termination of vfork child\n");
 				handle_syscall(proc2);
 			}
-
-		} else if (WIFSIGNALED(status)) {
-			tprintf(proc, "\nProcess terminated by signal %i (%s: %s)\n", WTERMSIG(status),
-			        get_signum_name(WTERMSIG(status)), strsignal(WTERMSIG(status)));
-
-		} else if (WIFSTOPPED(status)) {
-			if (WSTOPSIG(status) == (SIGTRAP | 0x80)) {
-				handle_syscall(proc);
-			} else if (WSTOPSIG(status) == SIGTRAP) {
-				trace_event = ((status >> 8) ^ SIGTRAP) >> 8;
-				switch (trace_event) {
-
-				case PTRACE_EVENT_VFORK:
-					tprintf(proc, "\nProcess stopped by vfork until child exits or exec(2)s\n");
-					/* fall thought */
-				case PTRACE_EVENT_FORK:
-				case PTRACE_EVENT_CLONE:
-					if (ptrace(PTRACE_GETEVENTMSG, proc->pid, NULL, &event))
-						eprintf("ptrace PTRACE_GETEVENTMSG %ju NULL <buffer>:", (uintmax_t)proc->pid);
-					proc2 = add_process((pid_t)event, trace_options);
-					if (trace_event == PTRACE_EVENT_CLONE)
-						proc2->thread_group_leader = proc->pid;
-					proc->ret = event;
-					if (trace_event == PTRACE_EVENT_VFORK) {
-						proc2->continue_on_exit = proc;
-						proc->vfork_waiting_on = proc2;
-						proc->state = VforkParent;
-					} else {
-						proc->state = trace_event == PTRACE_EVENT_CLONE ? CloneParent : ForkParent;
-						handle_syscall(proc);
-					}
-					tprintf(proc2, "\nTracing new process\n");
-					proc2->state = trace_event == PTRACE_EVENT_FORK ? ForkChild :
-					               trace_event == PTRACE_EVENT_VFORK ? VforkChild : CloneChild;
-					handle_syscall(proc2);
-					break;
-
-				case PTRACE_EVENT_EXEC:
-					proc->state = Exec;
-					handle_syscall(proc);
-					proc2 = proc->continue_on_exit;
-					if (proc2) {
-						proc->continue_on_exit = NULL;
-						proc2->vfork_waiting_on = NULL;
-						tprintf(proc2, "\nProcess continues due to exec(2) of vfork child\n");
-						handle_syscall(proc2);
-					}
-					break;
-
-				default:
-					goto print_signal;
-				}
-			} else {
-			print_signal:
-				tprintf(proc, "\nProcess received signal %i (%s: %s)\n", WSTOPSIG(status),
-				        get_signum_name(WSTOPSIG(status)), strsignal(WSTOPSIG(status)));
-				/* TODO handle signals properly (siginfo?, SIGSTOP &c does not stop the process) */
-				if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, WSTOPSIG(status)))
-					eprintf("ptrace PTRACE_SYSCALL %ju NULL %i:", (uintmax_t)proc->pid, WSTOPSIG(status));
-			}
-
-		} else if (WIFCONTINUED(status)) {
-			tprintf(proc, "\nProcess continued\n", (uintmax_t)pid);
 		}
+
 	}
 
 	fclose(outfp);

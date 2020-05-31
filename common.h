@@ -79,10 +79,11 @@ enum state {
 
 struct process {
 	pid_t pid;
-	pid_t thread_group_leader;
+	pid_t thread_leader;
 	struct process *next;
 	struct process *prev;
 	enum state state;
+	int silent_until_execed;
 
 	/* Syscall data */
 	unsigned long long int scall;
@@ -119,4 +120,7 @@ void remove_process(struct process *proc);
 /* util.c */
 void setup_trace_output(FILE *fp, int multiprocess);
 void tprintf(struct process *proc, const char *fmt, ...);
-_Noreturn void eprintf(const char *fmt, ...);
+void weprintf(const char *fmt, ...);
+#define eprintf(...) (weprintf(__VA_ARGS__), exit(1))
+#define eprintf_and_kill(PID, ...) (weprintf(__VA_ARGS__), kill((PID), SIGKILL), exit(1))
+FILE *xfopen(const char *file, const char *mode);

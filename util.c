@@ -20,17 +20,19 @@ void
 tprintf(struct process *proc, const char *fmt, ...)
 {
 	va_list ap;
+	if (proc->silent_until_execed)
+		return;
 	if (fmt[0] == '\n' && fmt[1]) {
 		last_pid = 0;
 		if (multiproctrace || last_char == '\n')
 			fmt = &fmt[1];
 	}
 	if (multiproctrace) {
-		if (proc->thread_group_leader) {
+		if (proc->thread_leader) {
 			if (last_char == '\n')
-				fprintf(trace_fp, "[%ju, %ju] ", (uintmax_t)proc->thread_group_leader, (uintmax_t)proc->pid);
+				fprintf(trace_fp, "[%ju, %ju] ", (uintmax_t)proc->thread_leader, (uintmax_t)proc->pid);
 			else if (proc->pid != last_pid)
-				fprintf(trace_fp, "\n[%ju, %ju] ", (uintmax_t)proc->thread_group_leader, (uintmax_t)proc->pid);
+				fprintf(trace_fp, "\n[%ju, %ju] ", (uintmax_t)proc->thread_leader, (uintmax_t)proc->pid);
 		} else {
 			if (last_char == '\n')
 				fprintf(trace_fp, "[%ju] ", (uintmax_t)proc->pid);
@@ -46,8 +48,8 @@ tprintf(struct process *proc, const char *fmt, ...)
 }
 
 
-_Noreturn void
-eprintf(const char *fmt, ...)
+void
+weprintf(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
@@ -64,5 +66,44 @@ eprintf(const char *fmt, ...)
 		break;
 	}
 	va_end(ap);
-	exit(1);
+}
+
+
+FILE *
+xfopen(const char *file, const char *mode)
+{
+	FILE *ret;
+	const char *num = NULL;
+	long int tmp;
+
+	if (!strncmp(file, "/dev/fd/", sizeof("/dev/fd/") - 1))
+		num = &file[sizeof("/dev/fd/") - 1];
+	else if (!strncmp(file, "/proc/self/fd/", sizeof("/proc/self/fd/") - 1))
+		num = &file[sizeof("/proc/self/fd/") - 1];
+	else if (!strcmp(file, "/dev/stdin"))
+		num = "0";
+	else if (!strcmp(file, "/dev/stdout"))
+		num = "1";
+	else if (!strcmp(file, "/dev/stderr"))
+		num = "2";
+
+	if (num && isdigit(*num)) {
+		errno = 0;
+		tmp = strtol(num, (void *)&num, 10);
+		if (!errno && tmp >= 0 &&
+#if INT_MAX < LONG_MAX
+		    tmp < INT_MAX &&
+#endif
+		    !*num) {
+			ret = fdopen((int)tmp, mode);
+			if (!ret)
+				eprintf("fdopen %li %s:", tmp, mode);
+			return ret;
+		}
+	}
+
+	ret = fopen(file, mode);
+	if (!ret)
+		eprintf("fopen %s %s:", file, mode);
+	return ret;
 }

@@ -83,7 +83,7 @@ struct process {
 	struct process *next;
 	struct process *prev;
 	enum state state;
-	int silent_until_execed;
+	int silent_until_execed; /* 2 until exec, 1 until "= 0", 0 afterwards */
 
 	/* Syscall data */
 	unsigned long long int scall;

@@ -45,14 +45,25 @@ add_process(pid_t pid, unsigned long int trace_options)
 			continue;
 		eprintf_and_kill(pid, "waitpid %ju <buffer> WSTOPPED:", (uintmax_t)pid);
 	}
-	if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGSTOP)
-		eprintf_and_kill(pid, "unexpected return of waitpid %ju <buffer> WSTOPPED:", (uintmax_t)pid);
-	if (ptrace(PTRACE_SEIZE, pid, 0, trace_options))
-		eprintf_and_kill(pid, "ptrace PTRACE_SEIZE %ju 0 ...:", (uintmax_t)pid);
-	if (ptrace(PTRACE_INTERRUPT, pid, 0, 0))
-		eprintf_and_kill(pid, "ptrace PTRACE_INTERRUPT %ju 0 0:", (uintmax_t)pid);
-	if (kill(pid, SIGCONT) < 0)
-		eprintf_and_kill(pid, "kill &ju SIGCONT:", (uintmax_t)pid);
+
+	switch (status) {
+	case __W_STOPCODE(SIGSTOP):
+		if (ptrace(PTRACE_SEIZE, pid, 0, trace_options))
+			eprintf_and_kill(pid, "ptrace PTRACE_SEIZE %ju 0 ...:", (uintmax_t)pid);
+		if (ptrace(PTRACE_INTERRUPT, pid, NULL, 0))
+			eprintf_and_kill(pid, "ptrace PTRACE_INTERRUPT %ju NULL 0:", (uintmax_t)pid);
+		if (kill(pid, SIGCONT) < 0)
+			eprintf_and_kill(pid, "kill &ju SIGCONT:", (uintmax_t)pid);
+		break;
+
+	case __W_STOPCODE(SIGTRAP) | (PTRACE_EVENT_STOP << 16):
+		if (ptrace(PTRACE_SYSCALL, pid, NULL, 0))
+			eprintf_and_kill(pid, "ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)pid);
+		break;
+
+	default:
+		eprintf_and_kill(pid, "unexpected return of waitpid %ju <buffer> WSTOPPED: %#x\n", (uintmax_t)pid, status);
+	}
 
 	return proc;
 }

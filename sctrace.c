@@ -157,7 +157,7 @@ handle_event(struct process *proc, int status)
 		abort();
 
 	case 0:
-		/* TODO ensure proper handling of signals (multithreaded?, siginfo?, in new processes?) */
+		/* TODO ensure proper handling of signals (siginfo?) */
 		if (ptrace(PTRACE_GETSIGINFO, proc->pid, 0, &(siginfo_t){0}))
 			goto stop_signal;
 		tprintf(proc, "\nProcess received signal %i (%s: %s)\n", sig, get_signum_name(sig), strsignal(sig));

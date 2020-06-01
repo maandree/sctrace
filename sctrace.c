@@ -257,11 +257,11 @@ main(int argc, char **argv)
 				exit_code = status;
 			if (WIFEXITED(status)) {
 				tprintf(proc, "\nProcess exited with value %i%s\n", WEXITSTATUS(status),
-				        __WCOREDUMP(status) ? ", core dumped" : "");
+				        WCOREDUMP(status) ? ", core dumped" : "");
 			} else {
 				tprintf(proc, "\nProcess terminated by signal %i (%s: %s)%s\n", WTERMSIG(status),
 				        get_signum_name(WTERMSIG(status)), strsignal(WTERMSIG(status)),
-				        __WCOREDUMP(status) ? ", core dumped" : "");
+				        WCOREDUMP(status) ? ", core dumped" : "");
 			}
 			proc2 = proc->continue_on_exit;
 			remove_process(proc);

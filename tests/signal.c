@@ -1,0 +1,18 @@
+#include <signal.h>
+#include <unistd.h>
+
+static void
+interrupt()
+{
+	write(-2, "xyzzy\n", 6);
+}
+
+int
+main(void)
+{
+	signal(SIGINT, interrupt);
+	kill(getpid(), SIGINT);
+	usleep(100000U);
+	write(-1, "qwerty\n", 7);
+	return 0;
+}

@@ -286,7 +286,7 @@ main(int argc, char **argv)
 	if (WIFSIGNALED(exit_code)) {
 		exit_code = WTERMSIG(exit_code);
 		raise(exit_code);
-		exit_code += 128;
+		return exit_code + 128;
 	}
-	return exit_code;
+	return WEXITSTATUS(exit_code);
 }

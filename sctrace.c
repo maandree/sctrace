@@ -183,6 +183,7 @@ main(int argc, char **argv)
 	sigset_t sm;
 
 	/* TODO add option to trace signals with siginfo (-s) */
+	/* TODO add option to truncate long syscall arguments and outputs (-a) */
 	ARGBEGIN {
 	case '0':
 		with_argv0 = 1;

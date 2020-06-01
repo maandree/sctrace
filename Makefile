@@ -42,10 +42,13 @@ list-signums.h:
 
 install: sctrace
 	mkdir -p -- "$(DESTDIR)$(PREFIX)/bin"
+	mkdir -p -- "$(DESTDIR)$(MANPREFIX)/man1"
 	cp -- sctrace "$(DESTDIR)$(PREFIX)/bin"
+	cp -- sctrace.1 "$(DESTDIR)$(MANPREFIX)/man1"
 
 uninstall:
 	-rm -f -- "$(DESTDIR)$(PREFIX)/bin/sctrace"
+	-rm -f -- "$(DESTDIR)$(MANPREFIX)/man1/sctrace.1"
 
 clean:
 	-rm -f -- *.o list-*.h sctrace

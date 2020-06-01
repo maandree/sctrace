@@ -473,9 +473,12 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 
 		if (*fmt == 'p') {
 		p_fmt:
-			if (input && get_struct_or_null(proc->pid, arg, &arg, sizeof(void *), &err)) {
-				tprintf(proc, "%s", err);
-				goto next;
+			if (input) {
+				if (get_struct_or_null(proc->pid, arg, &arg, sizeof(void *), &err)) {
+					tprintf(proc, "%s", err);
+					goto next;
+				}
+				tprintf(proc, "&");
 			}
 			if (arg)
 				tprintf(proc, "%p", (void *)arg);
@@ -495,9 +498,12 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 			tprintf(proc, "%s", str ? str : err);
 			free(str);
 		} else if (*fmt == 'F') {
-			if (input && get_struct_or_null(proc->pid, arg, &arg, sizeof(int), &err)) {
-				tprintf(proc, "%s", err);
-				goto next;
+			if (input) {
+				if (get_struct_or_null(proc->pid, arg, &arg, sizeof(int), &err)) {
+					tprintf(proc, "%s", err);
+					goto next;
+				}
+				tprintf(proc, "&");
 			}
 			if ((int)arg == AT_FDCWD)
 				tprintf(proc, "AT_FDCWD");
@@ -519,6 +525,7 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 					tprintf(proc, "%s", err);
 					goto next;
 				}
+				tprintf(proc, "&");
 			}
 			value = arg;
 			if (size < sizeof(long long int))
@@ -979,8 +986,10 @@ print_systemcall_exit(struct process *proc)
 			case 'p':
 				if (get_struct_or_null(proc->pid, proc->args[i], buf, sizeof(void *), &err))
 					tprintf(proc, "%s\n", err);
-				else
+				else if (*(void **)buf)
 					tprintf(proc, "%p\n", *(void **)buf);
+				else
+					tprintf(proc, "NULL\n");
 				break;
 
 			case 'm':

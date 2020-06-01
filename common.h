@@ -19,11 +19,6 @@
 #include <string.h>
 #include <unistd.h>
 
-/* Constants used in system calls */
-#include <sys/epoll.h>
-#include <sys/socket.h>
-#include <fcntl.h>
-
 #include "arg.h"
 #include "list-errnos.h"
 #include "list-signums.h"

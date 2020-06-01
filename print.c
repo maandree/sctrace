@@ -1,13 +1,109 @@
 /* See LICENSE file for copyright and license details. */
 #include "common.h"
 
+#include <linux/memfd.h>
+#include <sys/epoll.h>
+#include <sys/inotify.h>
+#include <sys/mman.h>
+#include <sys/mount.h>
+#include <sys/random.h>
+#include <sys/socket.h>
+#include <sys/xattr.h>
+#include <fcntl.h>
+#include <sched.h>
+#include <time.h>
+
+#ifndef CLONE_NEWTIME
+# define CLONE_NEWTIME 0x00000080
+#endif
+
+
+#define CASE(N) if (proc->args[arg_index] == N) return tprintf(proc, "%s", #N)
+
+#define FLAGS_BEGIN\
+	do {\
+		char buf[1024] = {0};\
+		char *p = buf;\
+		unsigned long long int flags = proc->args[arg_index]
+
+#define FLAG(FLAG)\
+		do {\
+			_Static_assert((FLAG) != 0);\
+			if (flags & (FLAG)) {\
+				p = stpcpy(p, "|"#FLAG);\
+				flags ^= (FLAG);\
+			}\
+		} while (0)
+
+#define FLAGS_END\
+		if (flags || !*buf)\
+			sprintf(p, "|%#llx", flags);\
+		tprintf(proc, "%s", &buf[0]);\
+	} while (0)
+
+#define FLAGS_END_DEFAULT(FLAG)\
+		_Static_assert((FLAG) == 0);\
+		if (!flags && !*buf)\
+			sprintf(p, "|%s", #FLAG);\
+		else if (flags || !*buf)\
+			sprintf(p, "|%#llx", flags);\
+		tprintf(proc, "%s", &buf[0]);\
+	} while (0)
+
+
 
 static void
-print_clockid(struct process *proc, size_t arg_index) /* TODO */
+print_accept4_flags(struct process *proc, size_t arg_index)
 {
+	FLAGS_BEGIN;
+	FLAG(SOCK_NONBLOCK);
+	FLAG(SOCK_CLOEXEC);
+	FLAGS_END;
+}
+
+static void
+print_access_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(R_OK);
+	FLAG(W_OK);
+	FLAG(X_OK);
+	FLAGS_END_DEFAULT(F_OK);
+}
+
+static void
+print_faccessat_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(AT_EACCESS);
+	FLAG(AT_SYMLINK_NOFOLLOW);
+	FLAGS_END;
+}
+
+static void
+print_clockid(struct process *proc, size_t arg_index)
+{
+	CASE(CLOCK_REALTIME);
+	CASE(CLOCK_MONOTONIC);
+	CASE(CLOCK_PROCESS_CPUTIME_ID);
+	CASE(CLOCK_THREAD_CPUTIME_ID);
+	CASE(CLOCK_MONOTONIC_RAW);
+	CASE(CLOCK_REALTIME_COARSE);
+	CASE(CLOCK_MONOTONIC_COARSE);
+	CASE(CLOCK_BOOTTIME);
+	CASE(CLOCK_REALTIME_ALARM);
+	CASE(CLOCK_BOOTTIME_ALARM);
+	CASE(CLOCK_TAI);
 	tprintf(proc, "%li", (long int)proc->args[arg_index]);
 }
 
+static void
+print_clock_nanosleep_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(TIMER_ABSTIME);
+	FLAGS_END;
+}
 
 static void
 print_timespec(struct process *proc, size_t arg_index)
@@ -21,6 +117,257 @@ print_timespec(struct process *proc, size_t arg_index)
 	tprintf(proc, "{.tv_sec = %ji, .tv_nsec = %li}", (intmax_t)ts.tv_sec, ts.tv_nsec);
 }
 
+static void
+print_delete_module_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(O_NONBLOCK);
+	FLAG(O_TRUNC);
+	FLAGS_END;
+}
+
+static void
+print_dup3_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(O_CLOEXEC);
+	FLAGS_END;
+}
+
+static void
+print_epoll_create1_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(EPOLL_CLOEXEC);
+	FLAGS_END;
+}
+
+static void
+print_at_symlink_nofollow(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(AT_SYMLINK_NOFOLLOW);
+	FLAGS_END;
+}
+
+static void
+print_at_empty_path_at_symlink_nofollow(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(AT_EMPTY_PATH);
+	FLAG(AT_SYMLINK_NOFOLLOW);
+	FLAGS_END;
+}
+
+static void
+print_setxattr_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(XATTR_CREATE);
+	FLAG(XATTR_REPLACE);
+	FLAGS_END;
+}
+
+static void
+print_getrandom_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(GRND_RANDOM);
+	FLAG(GRND_NONBLOCK);
+	FLAGS_END;
+}
+
+static void
+print_inotify_init1_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(IN_NONBLOCK);
+	FLAG(IN_CLOEXEC);
+	FLAGS_END;
+}
+
+static void
+print_inotify_add_watch_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(IN_ACCESS);
+	FLAG(IN_MODIFY);
+	FLAG(IN_ATTRIB);
+	FLAG(IN_CLOSE_WRITE);
+	FLAG(IN_CLOSE_NOWRITE);
+	FLAG(IN_OPEN);
+	FLAG(IN_MOVED_FROM);
+	FLAG(IN_MOVED_TO);
+	FLAG(IN_CREATE);
+	FLAG(IN_DELETE);
+	FLAG(IN_DELETE_SELF);
+	FLAG(IN_MOVE_SELF);
+	FLAG(IN_ONLYDIR);
+	FLAG(IN_DONT_FOLLOW);
+	FLAG(IN_EXCL_UNLINK);
+	FLAG(IN_MASK_CREATE);
+	FLAG(IN_MASK_ADD);
+	FLAG(IN_ISDIR);
+	FLAG(IN_ONESHOT);
+	FLAGS_END;
+}
+
+static void
+print_signal_name(struct process *proc, size_t arg_index)
+{
+	tprintf(proc, "%s", get_signum_name((int)proc->args[arg_index]));
+}
+
+static void
+print_lseek_flag(struct process *proc, size_t arg_index)
+{
+	CASE(SEEK_SET);
+	CASE(SEEK_CUR);
+	CASE(SEEK_END);
+	CASE(SEEK_DATA);
+	CASE(SEEK_HOLE);
+	tprintf(proc, "%i", (int)proc->args[arg_index]);
+}
+
+static void
+print_int_pair(struct process *proc, size_t arg_index)
+{
+	const int *pair = (const void *)proc->args[arg_index];
+	tprintf(proc, "{%i, %i}", pair[0], pair[1]);
+}
+
+static void
+print_splice_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(SPLICE_F_MOVE);
+	FLAG(SPLICE_F_NONBLOCK);
+	FLAG(SPLICE_F_MORE);
+	FLAG(SPLICE_F_GIFT);
+	FLAGS_END;
+}
+
+static void
+print_mlock2_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(MLOCK_ONFAULT);
+	FLAGS_END;
+}
+
+static void
+print_mlockall_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(MCL_CURRENT);
+	FLAG(MCL_FUTURE);
+	FLAG(MCL_ONFAULT);
+	FLAGS_END;
+}
+
+static void
+print_shutdown_flag(struct process *proc, size_t arg_index)
+{
+	CASE(SHUT_RD);
+	CASE(SHUT_WR);
+	CASE(SHUT_RDWR);
+	tprintf(proc, "%i", (int)proc->args[arg_index]);
+}
+
+static void
+print_unlinkat_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(AT_REMOVEDIR);
+	FLAGS_END;
+}
+
+static void
+print_renameat2_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(RENAME_EXCHANGE);
+	FLAG(RENAME_NOREPLACE);
+	FLAG(RENAME_WHITEOUT);
+	FLAGS_END;
+}
+
+static void
+print_userfaultfd_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(O_CLOEXEC);
+	FLAG(O_NONBLOCK);
+	FLAGS_END;
+}
+
+static void
+print_unshare_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(CLONE_FILES);
+	FLAG(CLONE_FS);
+	FLAG(CLONE_NEWCGROUP);
+	FLAG(CLONE_NEWIPC);
+	FLAG(CLONE_NEWNET);
+	FLAG(CLONE_NEWNS);
+	FLAG(CLONE_NEWPID);
+	FLAG(CLONE_NEWTIME);
+	FLAG(CLONE_NEWUSER);
+	FLAG(CLONE_NEWUTS);
+	FLAG(CLONE_SYSVSEM);
+	FLAGS_END;
+}
+
+static void
+print_pipe2_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(O_CLOEXEC);
+	FLAG(O_DIRECT);
+	FLAG(O_NONBLOCK);
+	FLAGS_END;
+}
+
+static void
+print_sync_file_range_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(SYNC_FILE_RANGE_WAIT_BEFORE);
+	FLAG(SYNC_FILE_RANGE_WRITE);
+	FLAG(SYNC_FILE_RANGE_WAIT_AFTER);
+	FLAGS_END;
+}
+
+static void
+print_umount2_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(MNT_FORCE);
+	FLAG(MNT_DETACH);
+	FLAG(MNT_EXPIRE);
+	FLAG(UMOUNT_NOFOLLOW);
+	FLAGS_END;
+}
+
+static void
+print_memfd_create_flags(struct process *proc, size_t arg_index)
+{
+	unsigned long long int huge;
+	FLAGS_BEGIN;
+	FLAG(MFD_CLOEXEC);
+	FLAG(MFD_ALLOW_SEALING);
+	FLAG(MFD_HUGETLB);
+	huge = flags;
+	huge &= (unsigned long long int)(MFD_HUGE_MASK & 0x3F) << MFD_HUGE_SHIFT;
+	if (huge) {
+		flags ^= huge;
+		huge >>= MFD_HUGE_SHIFT;
+		sprintf(p, "|MFD_HUGE_%i%c%s", 1 << ((int)huge % 10), "BKMGTPE"[huge / 10], huge >= 10 ? "B" : "");
+	}
+	FLAGS_END;
+}
+
 
 static void
 printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
@@ -29,7 +376,7 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 	Function funcs[6];
 	size_t i, nfuncs = 0, func, len;
 	unsigned long long int *args = proc->args;
-	int ells = 0;
+	int ells = 0, output = 0;
 	char *str;
 	const char *err;
 	va_list ap;
@@ -49,6 +396,15 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 			continue;
 		} else if (*fmt == 'H') {
 			ells -= 2;
+			continue;
+		}
+		if (output) {
+			/* TODO Finish support for output ('>', followed by format) */
+			output = 0;
+			continue;
+		}
+		if (*fmt == '>') {
+			output = 1;
 			continue;
 		}
 		if (i)
@@ -117,19 +473,7 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 void
 print_systemcall(struct process *proc)
 {
-	char buf1[128], *p, *buf;
-	unsigned long int flags;
 	unsigned long long int *args = proc->args;
-
-#define FLAGS_BEGIN(BUF, ARG)\
-	p = buf = (BUF);\
-	flags = (ARG)
-#define FLAGS_ADD(FLAG)\
-	if (flags & (unsigned long int)(FLAG))\
-		p = stpcpy(p, "|"#FLAG)
-#define FLAGS_END(FMT, TYPE)\
-	if (flags || p == buf)\
-		sprintf(p, "|"FMT, (TYPE)flags);
 
 #define UNDOCUMENTED(NAME) GENERIC_HANDLER(NAME)
 #define UNIMPLEMENTED(NAME) GENERIC_HANDLER(NAME)
@@ -155,20 +499,13 @@ print_systemcall(struct process *proc)
 	switch (proc->scall) {
 	GENERIC_HANDLER(_sysctl);
 	SIMPLE(accept, "ipp", Int); /* TODO output */
-	case SYS_accept4: /* TODO output */
-		FLAGS_BEGIN(buf1, args[3]);
-		FLAGS_ADD(SOCK_NONBLOCK);
-		FLAGS_ADD(SOCK_CLOEXEC);
-		FLAGS_END("%#x", unsigned int);
-		tprintf(proc, "accept4(%i, %p, %p, %s) ", (int)args[0], (void *)args[1], (void *)args[2], &buf1[1]);
-		proc->ret_type = Int;
-		break;
-	SIMPLE(access, "si", Int); /* TODO flags */
+	FORMATTERS(accept4, "ipp1", Int, print_accept4_flags); /* TODO output */
+	FORMATTERS(access, "s1", Int, print_access_flags);
 	SIMPLE(acct, "s", Int);
 	GENERIC_HANDLER(add_key);
 	GENERIC_HANDLER(adjtimex);
 	UNIMPLEMENTED(afs_syscall);
-	SIMPLE(alarm, "", UInt);
+	SIMPLE(alarm, "u", UInt);
 	GENERIC_HANDLER(arch_prctl);
 	GENERIC_HANDLER(bind);
 	GENERIC_HANDLER(bpf);
@@ -180,29 +517,23 @@ print_systemcall(struct process *proc)
 	SIMPLE(chown, "sii", Int);
 	SIMPLE(chroot, "s", Int);
 	UNDOCUMENTED(clock_adjtime);
-	FORMATTERS(clock_getres, "1p", Int, print_clockid); /* TODO output */
-	FORMATTERS(clock_gettime, "1p", Int, print_clockid); /* TODO output */
-	FORMATTERS(clock_nanosleep, "1i2p", Int, print_clockid, print_timespec); /* TODO output, flags */
+	FORMATTERS(clock_getres, "1p>2", Int, print_clockid, print_timespec);
+	FORMATTERS(clock_gettime, "1p>2", Int, print_clockid, print_timespec);
+	FORMATTERS(clock_nanosleep, "123p>3", Int, print_clockid, print_clock_nanosleep_flags, print_timespec);
 	FORMATTERS(clock_settime, "12", Int, print_clockid, print_timespec);
 	GENERIC_HANDLER(clone);
 	GENERIC_HANDLER(clone3);
 	SIMPLE(close, "i", Int);
 	GENERIC_HANDLER(connect);
 	GENERIC_HANDLER(copy_file_range);
-	SIMPLE(creat, "so", Int); /* TODO flags */
+	SIMPLE(creat, "so", Int);
 	SIMPLE(create_module, "slu", Ptr);
-	SIMPLE(delete_module, "si", Int); /* TODO flags */
+	FORMATTERS(delete_module, "s1", Int, print_delete_module_flags);
 	SIMPLE(dup, "i", Int);
 	SIMPLE(dup2, "ii", Int);
-	SIMPLE(dup3, "iii", Int);
+	FORMATTERS(dup3, "ii3", Int, print_dup3_flags);
 	SIMPLE(epoll_create, "i", Int);
-	case SYS_epoll_create1:\
-		FLAGS_BEGIN(buf1, args[0]);
-		FLAGS_ADD(EPOLL_CLOEXEC);
-		FLAGS_END("%#x", unsigned int);
-		tprintf(proc, "epoll_create1(%s) ", &buf1[1]);
-		proc->ret_type = Int;
-		break;
+	FORMATTERS(epoll_create1, "1", Int, print_epoll_create1_flags);
 	GENERIC_HANDLER(epoll_ctl);
 	GENERIC_HANDLER(epoll_ctl_old);
 	GENERIC_HANDLER(epoll_pwait);
@@ -214,26 +545,26 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(execveat);
 	SIMPLE(exit, "i", Int);
 	SIMPLE(exit_group, "i", Int);
-	SIMPLE(faccessat, "Fsii", Int); /* TODO flags */
+	FORMATTERS(faccessat, "Fs12", Int, print_accept4_flags, print_faccessat_flags);
 	GENERIC_HANDLER(fadvise64);
 	GENERIC_HANDLER(fallocate);
 	GENERIC_HANDLER(fanotify_init);
 	GENERIC_HANDLER(fanotify_mark);
 	SIMPLE(fchdir, "i", Int);
 	SIMPLE(fchmod, "io", Int);
-	SIMPLE(fchmodat, "Fsoi", Int); /* TODO flags */
+	FORMATTERS(fchmodat, "Fso1", Int, print_at_symlink_nofollow);
 	SIMPLE(fchown, "iii", Int);
-	SIMPLE(fchownat, "Fsiii", Int); /* TODO flags */
+	FORMATTERS(fchownat, "Fsii1", Int, print_at_empty_path_at_symlink_nofollow);
 	GENERIC_HANDLER(fcntl);
 	SIMPLE(fdatasync, "i", Int);
-	SIMPLE(fgetxattr, "isplu", Long); /* TODO output */
+	SIMPLE(fgetxattr, "isp>mlu", Long);
 	GENERIC_HANDLER(finit_module);
 	GENERIC_HANDLER(flistxattr);
 	GENERIC_HANDLER(flock);
-	SIMPLE(fork, "", Int); /* TODO fork */
+	SIMPLE(fork, "", Int);
 	SIMPLE(fremovexattr, "is", Int);
 	UNDOCUMENTED(fsconfig);
-	SIMPLE(fsetxattr, "ismlui", Int); /* TODO flags */
+	FORMATTERS(fsetxattr, "ismlu1", Int, print_setxattr_flags);
 	UNDOCUMENTED(fsmount);
 	UNDOCUMENTED(fsopen);
 	UNDOCUMENTED(fspick);
@@ -263,9 +594,9 @@ print_systemcall(struct process *proc)
 	UNIMPLEMENTED(getpmsg);
 	SIMPLE(getppid, "", Int);
 	SIMPLE(getpriority, "ii", Int);
-	SIMPLE(getrandom, "pluu", Long); /* TODO output, flags */
-	SIMPLE(getresgid, "ppp", Int); /* TODO output */
-	SIMPLE(getresuid, "ppp", Int); /* TODO output */
+	FORMATTERS(getrandom, "p>mlu1", Long, print_getrandom_flags);
+	SIMPLE(getresgid, "p>ip>ip>i", Int);
+	SIMPLE(getresuid, "p>ip>ip>i", Int);
 	GENERIC_HANDLER(getrlimit);
 	GENERIC_HANDLER(getrusage);
 	SIMPLE(getsid, "i", Int);
@@ -274,11 +605,11 @@ print_systemcall(struct process *proc)
 	SIMPLE(gettid, "", Int);
 	GENERIC_HANDLER(gettimeofday);
 	SIMPLE(getuid, "", Int);
-	SIMPLE(getxattr, "ssplu", Long); /* TODO output */
+	SIMPLE(getxattr, "ssp>mlu", Long);
 	GENERIC_HANDLER(init_module);
-	SIMPLE(inotify_add_watch, "isx", Int); /* TODO flags */
+	FORMATTERS(inotify_add_watch, "is1", Int, print_inotify_add_watch_flags);
 	SIMPLE(inotify_init, "", Int);
-	SIMPLE(inotify_init1, "i", Int); /* TODO flags */
+	FORMATTERS(inotify_init1, "1", Int, print_inotify_init1_flags);
 	SIMPLE(inotify_rm_watch, "ii", Int);
 	GENERIC_HANDLER(io_cancel);
 	GENERIC_HANDLER(io_destroy);
@@ -298,23 +629,23 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(kexec_file_load);
 	GENERIC_HANDLER(kexec_load);
 	GENERIC_HANDLER(keyctl);
-	SIMPLE(kill, "ii", Int); /* TODO flags */
+	FORMATTERS(kill, "i1", Int, print_signal_name);
 	SIMPLE(lchown, "sii", Int);
-	SIMPLE(lgetxattr, "ssplu", Long); /* TODO output */
+	SIMPLE(lgetxattr, "ssp>mlu", Long);
 	SIMPLE(link, "ss", Int);
-	SIMPLE(linkat, "FsFsi", Int); /* TODO flags */
+	FORMATTERS(linkat, "FsFs1", Int, print_at_empty_path_at_symlink_nofollow);
 	SIMPLE(listen, "ii", Int);
 	GENERIC_HANDLER(listxattr);
 	GENERIC_HANDLER(llistxattr);
 	GENERIC_HANDLER(lookup_dcookie);
 	SIMPLE(lremovexattr, "ss", Int);
-	SIMPLE(lseek, "illii", LLong); /* TODO flags */
-	SIMPLE(lsetxattr, "ssmlui", Int); /* TODO flags */
+	FORMATTERS(lseek, "illi1", LLong, print_lseek_flag);
+	FORMATTERS(lsetxattr, "ssmlu1", Int, print_setxattr_flags);
 	SIMPLE(lstat, "sp", Int); /* TODO output */
 	SIMPLE(madvise, "plui", Int); /* TODO flags */
 	GENERIC_HANDLER(mbind);
 	SIMPLE(membarrier, "ii", Int); /* TODO flags */
-	SIMPLE(memfd_create, "su", Int); /* TODO flags */
+	FORMATTERS(memfd_create, "s1", Int, print_memfd_create_flags);
 	GENERIC_HANDLER(migrate_pages);
 	GENERIC_HANDLER(mincore);
 	SIMPLE(mkdir, "so", Int);
@@ -322,8 +653,8 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(mknod);
 	GENERIC_HANDLER(mknodat);
 	SIMPLE(mlock, "plu", Int);
-	SIMPLE(mlock2, "plui", Int); /* TODO flags */
-	SIMPLE(mlockall, "i", Int); /* TODO flags */
+	FORMATTERS(mlock2, "plu1", Int, print_mlock2_flags);
+	FORMATTERS(mlockall, "1", Int, print_mlockall_flags);
 	SIMPLE(mmap, "pluiiilli", Ptr); /* TODO flags */
 	GENERIC_HANDLER(modify_ldt);
 	GENERIC_HANDLER(mount);
@@ -346,7 +677,7 @@ print_systemcall(struct process *proc)
 	SIMPLE(munlockall, "", Int);
 	SIMPLE(munmap, "plu", Int);
 	GENERIC_HANDLER(name_to_handle_at);
-	FORMATTERS(nanosleep, "1p", Int, print_timespec); /* TODO output */
+	FORMATTERS(nanosleep, "1p>1", Int, print_timespec);
 	SIMPLE(newfstatat, "Fspi", Int); /* TODO output, flags */
 	SIMPLE(nfsservctl, "ipp", Long); /* TODO flags, struct, output */
 	GENERIC_HANDLER(open);
@@ -358,8 +689,8 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(personality);
 	SIMPLE(pidfd_open, "iu", Int);
 	GENERIC_HANDLER(pidfd_send_signal);
-	SIMPLE(pipe, "p", Int); /* TODO output */
-	SIMPLE(pipe2, "pi", Int); /* TODO output, flags */
+	FORMATTERS(pipe, "p>1", Int, print_int_pair);
+	FORMATTERS(pipe2, "p>12", Int, print_int_pair, print_pipe2_flags);
 	SIMPLE(pivot_root, "ss", Int);
 	SIMPLE(pkey_alloc, "lulu", Int); /* TODO flags */
 	SIMPLE(pkey_free, "i", Int);
@@ -381,10 +712,10 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(pwritev2);
 	GENERIC_HANDLER(query_module);
 	GENERIC_HANDLER(quotactl);
-	SIMPLE(read, "iplu", Long); /* TODO output */
+	SIMPLE(read, "ip>mlu", Long);
 	SIMPLE(readahead, "illilu", Long);
-	SIMPLE(readlink, "splu", Long); /* TODO output */
-	SIMPLE(readlinkat, "Fsplu", Long); /* TODO output */
+	SIMPLE(readlink, "sp>mlu", Long);
+	SIMPLE(readlinkat, "Fsp>mlu", Long);
 	GENERIC_HANDLER(readv);
 	GENERIC_HANDLER(reboot);
 	GENERIC_HANDLER(recvfrom);
@@ -394,7 +725,7 @@ print_systemcall(struct process *proc)
 	SIMPLE(removexattr, "ss", Int);
 	SIMPLE(rename, "ss", Int);
 	SIMPLE(renameat, "FsFs", Int);
-	SIMPLE(renameat2, "FsFsu", Int); /* TODO flags */
+	FORMATTERS(renameat2, "FsFs1", Int, print_renameat2_flags);
 	GENERIC_HANDLER(request_key);
 	SIMPLE(restart_syscall, "", Int);
 	SIMPLE(rmdir, "s", Int);
@@ -453,18 +784,18 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(setsockopt);
 	GENERIC_HANDLER(settimeofday);
 	SIMPLE(setuid, "i", Int);
-	SIMPLE(setxattr, "ssmlui", Int); /* TODO flags */
+	FORMATTERS(setxattr, "ssmlu1", Int, print_setxattr_flags);
 	GENERIC_HANDLER(shmat);
 	GENERIC_HANDLER(shmctl);
 	GENERIC_HANDLER(shmdt);
 	GENERIC_HANDLER(shmget);
-	SIMPLE(shutdown, "ii", Int); /* TODO flags */
+	FORMATTERS(shutdown, "i1", Int, print_shutdown_flag);
 	GENERIC_HANDLER(sigaltstack);
 	GENERIC_HANDLER(signalfd);
 	GENERIC_HANDLER(signalfd4);
 	SIMPLE(socket, "iii", Int); /* TODO flags */
-	SIMPLE(socketpair, "iiip", Int); /* TODO output, flags */
-	GENERIC_HANDLER(splice);
+	FORMATTERS(socketpair, "iiip>1", Int, print_int_pair); /* TODO flags */
+	FORMATTERS(splice, "ip>lliip>llilu1", Long, print_splice_flags);
 	GENERIC_HANDLER(stat);
 	GENERIC_HANDLER(statfs);
 	GENERIC_HANDLER(statx);
@@ -473,14 +804,14 @@ print_systemcall(struct process *proc)
 	SIMPLE(symlink, "ss", Int);
 	SIMPLE(symlinkat, "sFs", Int);
 	SIMPLE(sync, "", Void);
-	SIMPLE(sync_file_range, "illilliu", Int); /* TODO flags */
+	FORMATTERS(sync_file_range, "illilli1", Int, print_sync_file_range_flags);
 	SIMPLE(syncfs, "i", Int);
 	GENERIC_HANDLER(sysfs);
 	GENERIC_HANDLER(sysinfo);
 	GENERIC_HANDLER(syslog);
 	GENERIC_HANDLER(tee);
-	SIMPLE(tgkill, "iii", Int); /* TODO flags */
-	SIMPLE(time, "p", LLong); /* TODO output */
+	FORMATTERS(tgkill, "ii1", Int, print_signal_name);
+	SIMPLE(time, "p>lli", LLong);
 	GENERIC_HANDLER(timer_create);
 	GENERIC_HANDLER(timer_delete);
 	GENERIC_HANDLER(timer_getoverrun);
@@ -490,22 +821,22 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(timerfd_gettime);
 	GENERIC_HANDLER(timerfd_settime);
 	GENERIC_HANDLER(times);
-	SIMPLE(tkill, "ii", Int); /* TODO flags */
+	FORMATTERS(tkill, "i1", Int, print_signal_name);
 	SIMPLE(truncate, "slli", Int);
 	UNIMPLEMENTED(tuxcall);
 	SIMPLE(umask, "o", OInt);
-	SIMPLE(umount2, "si", Int); /* TODO flags */
+	FORMATTERS(umount2, "s1", Int, print_umount2_flags);
 	SIMPLE(uname, "p", Int); /* TODO output */
 	SIMPLE(unlink, "s", Int);
-	SIMPLE(unlinkat, "Fsi", Int); /* TODO flags */
-	SIMPLE(unshare, "i", Int); /* TODO flags */
+	FORMATTERS(unlinkat, "Fs1", Int, print_unlinkat_flags);
+	FORMATTERS(unshare, "1", Int, print_unshare_flags);
 	SIMPLE(uselib, "s", Int);
-	SIMPLE(userfaultfd, "i", Int); /* TODO flags */
+	FORMATTERS(userfaultfd, "1", Int, print_userfaultfd_flags);
 	GENERIC_HANDLER(ustat);
 	GENERIC_HANDLER(utime);
 	GENERIC_HANDLER(utimensat);
 	GENERIC_HANDLER(utimes);
-	SIMPLE(vfork, "", Int); /* TODO fork */
+	SIMPLE(vfork, "", Int);
 	SIMPLE(vhangup, "", Int);
 	GENERIC_HANDLER(vmsplice);
 	UNIMPLEMENTED(vserver);

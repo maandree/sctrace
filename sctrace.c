@@ -276,6 +276,7 @@ main(int argc, char **argv)
 			}
 		}
 
+		fflush(outfp);
 	}
 
 	fflush(outfp);

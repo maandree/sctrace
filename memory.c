@@ -22,6 +22,7 @@ get_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp)
 		if (process_vm_readv(pid, &outv, 1, &inv, 1, 0) != (ssize_t)read_size) {
 			*errorp = errno == EFAULT ? "<invalid address>" : "<an error occured during reading of string>";
 			*lenp = 0;
+			free(out);
 			return 0;
 		}
 		p = memchr(&out[off], 0, read_size);

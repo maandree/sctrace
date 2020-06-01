@@ -42,6 +42,8 @@
 #endif
 
 
+struct process;
+
 enum type {
 	Unknown,
 	Void,
@@ -72,6 +74,13 @@ enum state {
 	Exec
 };
 
+struct output {
+	int ells;
+	char fmt;
+	unsigned long long int size;
+	void (*func)(struct process *, size_t);
+};
+
 struct process {
 	pid_t pid;
 	pid_t thread_leader;
@@ -85,6 +94,7 @@ struct process {
 	unsigned long long int args[6];
 	unsigned long long int ret;
 	enum type ret_type;
+	struct output outputs[6];
 
 	/* vfork(2) data */
 	struct process *continue_on_exit;

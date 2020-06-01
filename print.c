@@ -18,6 +18,42 @@
 #endif
 
 
+static char *
+get_escaped_string_or_null(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp)
+{
+	char *r;
+	if (!addr) {
+		*errorp = "NULL";
+		return NULL;
+	}
+	r = get_string(pid, addr, lenp, errorp);
+	return escape_memory(r, *lenp);
+}
+
+static char *
+get_escaped_memory_or_null(pid_t pid, unsigned long int addr, size_t n, const char **errorp)
+{
+	char *r;
+	if (!addr) {
+		*errorp = "NULL";
+		return NULL;
+	}
+	r = get_memory(pid, addr, n, errorp);
+	return escape_memory(r, n);
+}
+
+static int
+get_struct_or_null(pid_t pid, unsigned long int addr, void *out, size_t size, const char **errorp)
+{
+	if (!addr) {
+		*errorp = "NULL";
+		return -1;
+	}
+	return get_struct(pid, addr, out, size, errorp);
+}
+
+
+
 #define CASE(N) if (proc->args[arg_index] == N) return tprintf(proc, "%s", #N)
 
 #define FLAGS_BEGIN\
@@ -38,7 +74,7 @@
 #define FLAGS_END\
 		if (flags || !*buf)\
 			sprintf(p, "|%#llx", flags);\
-		tprintf(proc, "%s", &buf[0]);\
+		tprintf(proc, "%s", &buf[1]);\
 	} while (0)
 
 #define FLAGS_END_DEFAULT(FLAG)\
@@ -47,7 +83,7 @@
 			sprintf(p, "|%s", #FLAG);\
 		else if (flags || !*buf)\
 			sprintf(p, "|%#llx", flags);\
-		tprintf(proc, "%s", &buf[0]);\
+		tprintf(proc, "%s", &buf[1]);\
 	} while (0)
 
 
@@ -110,7 +146,7 @@ print_timespec(struct process *proc, size_t arg_index)
 {
 	struct timespec ts;
 	const char *err;
-	if (get_struct(proc->pid, proc->args[arg_index], &ts, sizeof(ts), &err)) {
+	if (get_struct_or_null(proc->pid, proc->args[arg_index], &ts, sizeof(ts), &err)) {
 		tprintf(proc, "%s", err);
 		return;
 	}
@@ -232,7 +268,12 @@ print_lseek_flag(struct process *proc, size_t arg_index)
 static void
 print_int_pair(struct process *proc, size_t arg_index)
 {
-	const int *pair = (const void *)proc->args[arg_index];
+	int pair[2];
+	const char *err;
+	if (get_struct_or_null(proc->pid, proc->args[arg_index], pair, sizeof(pair), &err)) {
+		tprintf(proc, "%s", err);
+		return;
+	}
 	tprintf(proc, "{%i, %i}", pair[0], pair[1]);
 }
 
@@ -372,19 +413,22 @@ print_memfd_create_flags(struct process *proc, size_t arg_index)
 static void
 printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 {
-	typedef char *(*Function)(struct process *proc, size_t arg_index);
+	typedef void (*Function)(struct process *proc, size_t arg_index);
 	Function funcs[6];
-	size_t i, nfuncs = 0, func, len;
-	unsigned long long int *args = proc->args;
-	int ells = 0, output = 0;
+	size_t i, nfuncs = 0, func, len, size;
+	unsigned long long int *args = proc->args, arg, value;
+	int ells = 0, output = 0, input = 0;
 	char *str;
 	const char *err;
 	va_list ap;
+
 	va_start(ap, fmt);
 	tprintf(proc, "%s(", scall);
+
 	for (i = 0; *fmt; fmt++) {
 		if (*fmt == ' ')
 			continue;
+
 		if (*fmt == 'l') {
 			ells += 1;
 			continue;
@@ -398,23 +442,43 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 			ells -= 2;
 			continue;
 		}
+
+		arg = args[i];
+
 		if (output) {
-			/* TODO Finish support for output ('>', followed by format) */
 			output = 0;
-			continue;
-		}
-		if (*fmt == '>') {
+			proc->outputs[i - !input].fmt = *fmt;
+			proc->outputs[i - !input].ells = ells;
+			if ('1' <= *fmt && *fmt <= '6') {
+				func = (size_t)(*fmt - '0');
+				while (nfuncs < func)
+					funcs[nfuncs++] = va_arg(ap, Function);
+				proc->outputs[i - !input].func = funcs[nfuncs - 1];
+			}
+			if (!input)
+				continue;
+		} else if (*fmt == '>') {
 			output = 1;
 			if (i)
 				tprintf(proc, ", ");
 			goto p_fmt;
+		} else if (*fmt == '&') {
+			output = 1;
+			input = 1;
+			continue;
 		}
+
 		if (i)
 			tprintf(proc, ", ");
+
 		if (*fmt == 'p') {
 		p_fmt:
-			if (args[i])
-				tprintf(proc, "%p", (void *)args[i]);
+			if (input && get_struct_or_null(proc->pid, arg, &arg, sizeof(void *), &err)) {
+				tprintf(proc, "%s", err);
+				goto next;
+			}
+			if (arg)
+				tprintf(proc, "%p", (void *)arg);
 			else
 				tprintf(proc, "NULL");
 		} else if (*fmt >= '1' && *fmt <= '6') {
@@ -423,51 +487,58 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 				funcs[nfuncs++] = va_arg(ap, Function);
 			funcs[func - 1](proc, i);
 		} else if (*fmt == 's') {
-			str = get_string(proc->pid, args[i], &len, &err);
-			str = escape_memory(str, len);
+			str = get_escaped_string_or_null(proc->pid, arg, &len, &err);
 			tprintf(proc, "%s", str ? str : err);
 			free(str);
 		} else if (*fmt == 'm') {
-			str = escape_memory(get_memory(proc->pid, args[i], (size_t)args[i + 1], &err), (size_t)args[i + 1]);
+			str = get_escaped_memory_or_null(proc->pid, arg, (size_t)args[i + 1], &err);
 			tprintf(proc, "%s", str ? str : err);
 			free(str);
 		} else if (*fmt == 'F') {
-			if ((int)args[i] == AT_FDCWD)
+			if (input && get_struct_or_null(proc->pid, arg, &arg, sizeof(int), &err)) {
+				tprintf(proc, "%s", err);
+				goto next;
+			}
+			if ((int)arg == AT_FDCWD)
 				tprintf(proc, "AT_FDCWD");
 			else
-				tprintf(proc, "%i", (int)args[i]);
-		} else if (*fmt == 'u') {
-			if (ells == 1)
-				tprintf(proc, "%lu", (unsigned long int)args[i]);
-			else if (ells > 1)
-				tprintf(proc, "%llu", (unsigned long long int)args[i]);
-			else
-				tprintf(proc, "%u", (unsigned int)args[i]);
-		} else if (*fmt == 'x') {
-			if (ells == 1)
-				tprintf(proc, "%#lx", (unsigned long int)args[i]);
-			else if (ells > 1)
-				tprintf(proc, "%#llx", (unsigned long long int)args[i]);
-			else
-				tprintf(proc, "%#x", (unsigned int)args[i]);
-		} else if (*fmt == 'o') {
-			if (ells == 1)
-				tprintf(proc, "%#lo", (unsigned long int)args[i]);
-			else if (ells > 1)
-				tprintf(proc, "%#llo", (unsigned long long int)args[i]);
-			else
-				tprintf(proc, "%#o", (unsigned int)args[i]);
+				tprintf(proc, "%i", (int)arg);
 		} else {
 			if (ells == 1)
-				tprintf(proc, "%li", (long int)args[i]);
+				size = sizeof(long int);
 			else if (ells > 1)
-				tprintf(proc, "%lli", (long long int)args[i]);
+				size = sizeof(long long int);
+			else if (ells == -1)
+				size = sizeof(short int);
+			else if (ells < -1)
+				size = sizeof(char);
 			else
-				tprintf(proc, "%i", (int)args[i]);
+				size = sizeof(int);
+			if (input) {
+				if (get_struct_or_null(proc->pid, arg, &arg, size, &err)) {
+					tprintf(proc, "%s", err);
+					goto next;
+				}
+			}
+			value = arg;
+			if (size < sizeof(long long int))
+				value &= (1ULL << (8 * size)) - 1;
+			if (*fmt == 'u')
+				tprintf(proc, "%llu", value);
+			else if (*fmt == 'x')
+				tprintf(proc, "%#llx", value);
+			else if (*fmt == 'o')
+				tprintf(proc, "%#llo", value);
+			else
+				tprintf(proc, "%lli", (long long int)value);
 		}
+
+	next:
+		input = 0;
 		ells = 0;
 		i += 1;
 	}
+
 	tprintf(proc, ") ");
 	va_end(ap);
 }
@@ -497,6 +568,7 @@ print_systemcall(struct process *proc)
 		break	
 
 	proc->ret_type = Unknown;
+	memset(proc->outputs, 0, sizeof(proc->outputs));
 
 	/* TODO replace GENERIC_HANDLER with specific handlers */
 	switch (proc->scall) {
@@ -798,7 +870,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(signalfd4);
 	SIMPLE(socket, "iii", Int); /* TODO flags */
 	FORMATTERS(socketpair, "iii>1", Int, print_int_pair); /* TODO flags */
-	FORMATTERS(splice, "i>llii>llilu1", Long, print_splice_flags);
+	FORMATTERS(splice, "i&llii&llilu1", Long, print_splice_flags);
 	GENERIC_HANDLER(stat);
 	GENERIC_HANDLER(statfs);
 	GENERIC_HANDLER(statx);
@@ -858,6 +930,11 @@ print_systemcall(struct process *proc)
 void
 print_systemcall_exit(struct process *proc)
 {
+	size_t i, size;
+	unsigned long long int value;
+	char *str, buf[32];
+	const char *err;
+
 	if (proc->ret_type == Int)
 		tprintf(proc, "= %i", (int)proc->ret);
 	else if (proc->ret_type == UInt)
@@ -887,8 +964,72 @@ print_systemcall_exit(struct process *proc)
 	else
 		tprintf(proc, "= %li", (long int)proc->ret);
 
-	if ((unsigned long long int)proc->ret > -(unsigned long long int)PAGE_SIZE)
+	if ((unsigned long long int)proc->ret > -(unsigned long long int)PAGE_SIZE) {
 		tprintf(proc, " (%s: %s)", get_errno_name(-(int)proc->ret), strerror(-(int)proc->ret));
+		tprintf(proc, "\n");
 
-	tprintf(proc, "\n");
+	} else {
+		tprintf(proc, "\n");
+		for (i = 0; i < 6; i++) {
+			if (!proc->args[i] || !proc->outputs[i].fmt)
+				continue;
+			tprintf(proc, "\tOutput to parameter %zu: ", i + 1);
+			switch (proc->outputs[i].fmt) {
+
+			case 'p':
+				if (get_struct_or_null(proc->pid, proc->args[i], buf, sizeof(void *), &err))
+					tprintf(proc, "%s\n", err);
+				else
+					tprintf(proc, "%p\n", *(void **)buf);
+				break;
+
+			case 'm':
+				value = proc->args[i + 1] < proc->ret ? proc->args[i + 1] : proc->ret;
+				str = get_escaped_memory_or_null(proc->pid, proc->args[i], (size_t)value, &err);
+				tprintf(proc, "%s\n", str ? str : err);
+				free(str);
+				break;
+
+			case '1': case '2': case '3': case '4': case '5': case '6':
+				proc->outputs[i].func(proc, i);
+				tprintf(proc, "\n");
+				break;
+
+			default:
+				if (proc->outputs[i].ells == 1)
+					size = sizeof(unsigned long int);
+				else if (proc->outputs[i].ells > 1)
+					size = sizeof(unsigned long long int);
+				else if (proc->outputs[i].ells == -1)
+					size = sizeof(unsigned short int);
+				else if (proc->outputs[i].ells < -1)
+					size = sizeof(unsigned char);
+				else
+					size = sizeof(unsigned int);
+				if (get_struct_or_null(proc->pid, proc->args[i], buf, size, &err)) {
+					tprintf(proc, "%s\n", err);
+					break;
+				}
+				if (proc->outputs[i].ells == 1)
+					value = *(unsigned long int *)buf;
+				else if (proc->outputs[i].ells > 1)
+					value = *(unsigned long long int *)buf;
+				else if (proc->outputs[i].ells == -1)
+					value = *(unsigned short int *)buf;
+				else if (proc->outputs[i].ells < -1)
+					value = *(unsigned char *)buf;
+				else
+					value = *(unsigned long long int *)buf;
+				if (proc->outputs[i].fmt == 'u')
+					tprintf(proc, "%llu\n", i + 1, value);
+				else if (proc->outputs[i].fmt == 'x')
+					tprintf(proc, "%#llx\n", i + 1, value);
+				else if (proc->outputs[i].fmt == 'o')
+					tprintf(proc, "%#llo\n", i + 1, value);
+				else
+					tprintf(proc, "%lli\n", i + 1, (long long int)value);
+				break;
+			}
+		}
+	}
 }

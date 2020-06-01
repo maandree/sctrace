@@ -21,7 +21,7 @@ handle_syscall(struct process *proc)
 
 	switch ((int)proc->state) {
 	default:
-		/* Get systemcall arguments */
+		/* Get system call arguments */
 		if (ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs))
 			eprintf("ptrace PTRACE_GETREGS %ju NULL <buffer>:", (uintmax_t)proc->pid);
 		proc->scall = regs.orig_rax;
@@ -183,7 +183,8 @@ main(int argc, char **argv)
 	sigset_t sm;
 
 	/* TODO add option to trace signals with siginfo (-s) */
-	/* TODO add option to truncate long syscall arguments and outputs (-a) */
+	/* TODO add option to truncate long syscall arguments and outputs (-a)
+	 *      This should be useful if your program does a lot of I/O */
 	ARGBEGIN {
 	case '0':
 		with_argv0 = 1;

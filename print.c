@@ -405,11 +405,14 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 		}
 		if (*fmt == '>') {
 			output = 1;
-			continue;
+			if (i)
+				tprintf(proc, ", ");
+			goto p_fmt;
 		}
 		if (i)
 			tprintf(proc, ", ");
 		if (*fmt == 'p') {
+		p_fmt:
 			if (args[i])
 				tprintf(proc, "%p", (void *)args[i]);
 			else
@@ -517,9 +520,9 @@ print_systemcall(struct process *proc)
 	SIMPLE(chown, "sii", Int);
 	SIMPLE(chroot, "s", Int);
 	UNDOCUMENTED(clock_adjtime);
-	FORMATTERS(clock_getres, "1p>2", Int, print_clockid, print_timespec);
-	FORMATTERS(clock_gettime, "1p>2", Int, print_clockid, print_timespec);
-	FORMATTERS(clock_nanosleep, "123p>3", Int, print_clockid, print_clock_nanosleep_flags, print_timespec);
+	FORMATTERS(clock_getres, "1>2", Int, print_clockid, print_timespec);
+	FORMATTERS(clock_gettime, "1>2", Int, print_clockid, print_timespec);
+	FORMATTERS(clock_nanosleep, "123>3", Int, print_clockid, print_clock_nanosleep_flags, print_timespec);
 	FORMATTERS(clock_settime, "12", Int, print_clockid, print_timespec);
 	GENERIC_HANDLER(clone);
 	GENERIC_HANDLER(clone3);
@@ -557,7 +560,7 @@ print_systemcall(struct process *proc)
 	FORMATTERS(fchownat, "Fsii1", Int, print_at_empty_path_at_symlink_nofollow);
 	GENERIC_HANDLER(fcntl);
 	SIMPLE(fdatasync, "i", Int);
-	SIMPLE(fgetxattr, "isp>mlu", Long);
+	SIMPLE(fgetxattr, "is>mlu", Long);
 	GENERIC_HANDLER(finit_module);
 	GENERIC_HANDLER(flistxattr);
 	GENERIC_HANDLER(flock);
@@ -594,9 +597,9 @@ print_systemcall(struct process *proc)
 	UNIMPLEMENTED(getpmsg);
 	SIMPLE(getppid, "", Int);
 	SIMPLE(getpriority, "ii", Int);
-	FORMATTERS(getrandom, "p>mlu1", Long, print_getrandom_flags);
-	SIMPLE(getresgid, "p>ip>ip>i", Int);
-	SIMPLE(getresuid, "p>ip>ip>i", Int);
+	FORMATTERS(getrandom, ">mlu1", Long, print_getrandom_flags);
+	SIMPLE(getresgid, ">i>i>i", Int);
+	SIMPLE(getresuid, ">i>i>i", Int);
 	GENERIC_HANDLER(getrlimit);
 	GENERIC_HANDLER(getrusage);
 	SIMPLE(getsid, "i", Int);
@@ -605,7 +608,7 @@ print_systemcall(struct process *proc)
 	SIMPLE(gettid, "", Int);
 	GENERIC_HANDLER(gettimeofday);
 	SIMPLE(getuid, "", Int);
-	SIMPLE(getxattr, "ssp>mlu", Long);
+	SIMPLE(getxattr, "ss>mlu", Long);
 	GENERIC_HANDLER(init_module);
 	FORMATTERS(inotify_add_watch, "is1", Int, print_inotify_add_watch_flags);
 	SIMPLE(inotify_init, "", Int);
@@ -631,7 +634,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(keyctl);
 	FORMATTERS(kill, "i1", Int, print_signal_name);
 	SIMPLE(lchown, "sii", Int);
-	SIMPLE(lgetxattr, "ssp>mlu", Long);
+	SIMPLE(lgetxattr, "ss>mlu", Long);
 	SIMPLE(link, "ss", Int);
 	FORMATTERS(linkat, "FsFs1", Int, print_at_empty_path_at_symlink_nofollow);
 	SIMPLE(listen, "ii", Int);
@@ -677,7 +680,7 @@ print_systemcall(struct process *proc)
 	SIMPLE(munlockall, "", Int);
 	SIMPLE(munmap, "plu", Int);
 	GENERIC_HANDLER(name_to_handle_at);
-	FORMATTERS(nanosleep, "1p>1", Int, print_timespec);
+	FORMATTERS(nanosleep, "1>1", Int, print_timespec);
 	SIMPLE(newfstatat, "Fspi", Int); /* TODO output, flags */
 	SIMPLE(nfsservctl, "ipp", Long); /* TODO flags, struct, output */
 	GENERIC_HANDLER(open);
@@ -689,8 +692,8 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(personality);
 	SIMPLE(pidfd_open, "iu", Int);
 	GENERIC_HANDLER(pidfd_send_signal);
-	FORMATTERS(pipe, "p>1", Int, print_int_pair);
-	FORMATTERS(pipe2, "p>12", Int, print_int_pair, print_pipe2_flags);
+	FORMATTERS(pipe, ">1", Int, print_int_pair);
+	FORMATTERS(pipe2, ">12", Int, print_int_pair, print_pipe2_flags);
 	SIMPLE(pivot_root, "ss", Int);
 	SIMPLE(pkey_alloc, "lulu", Int); /* TODO flags */
 	SIMPLE(pkey_free, "i", Int);
@@ -712,10 +715,10 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(pwritev2);
 	GENERIC_HANDLER(query_module);
 	GENERIC_HANDLER(quotactl);
-	SIMPLE(read, "ip>mlu", Long);
+	SIMPLE(read, "i>mlu", Long);
 	SIMPLE(readahead, "illilu", Long);
-	SIMPLE(readlink, "sp>mlu", Long);
-	SIMPLE(readlinkat, "Fsp>mlu", Long);
+	SIMPLE(readlink, "s>mlu", Long);
+	SIMPLE(readlinkat, "Fs>mlu", Long);
 	GENERIC_HANDLER(readv);
 	GENERIC_HANDLER(reboot);
 	GENERIC_HANDLER(recvfrom);
@@ -794,8 +797,8 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(signalfd);
 	GENERIC_HANDLER(signalfd4);
 	SIMPLE(socket, "iii", Int); /* TODO flags */
-	FORMATTERS(socketpair, "iiip>1", Int, print_int_pair); /* TODO flags */
-	FORMATTERS(splice, "ip>lliip>llilu1", Long, print_splice_flags);
+	FORMATTERS(socketpair, "iii>1", Int, print_int_pair); /* TODO flags */
+	FORMATTERS(splice, "i>llii>llilu1", Long, print_splice_flags);
 	GENERIC_HANDLER(stat);
 	GENERIC_HANDLER(statfs);
 	GENERIC_HANDLER(statx);
@@ -811,7 +814,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(syslog);
 	GENERIC_HANDLER(tee);
 	FORMATTERS(tgkill, "ii1", Int, print_signal_name);
-	SIMPLE(time, "p>lli", LLong);
+	SIMPLE(time, ">lli", LLong);
 	GENERIC_HANDLER(timer_create);
 	GENERIC_HANDLER(timer_delete);
 	GENERIC_HANDLER(timer_getoverrun);

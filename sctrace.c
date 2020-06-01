@@ -161,7 +161,6 @@ handle_event(struct process *proc, int status)
 		abort();
 
 	case 0:
-		/* TODO ensure proper handling of signals (siginfo?) */
 		if (ptrace(PTRACE_GETSIGINFO, proc->pid, 0, &(siginfo_t){0}))
 			goto stop_signal;
 		tprintf(proc, "\nProcess received signal %i (%s: %s)\n", sig, get_signum_name(sig), strsignal(sig));
@@ -178,8 +177,10 @@ main(int argc, char **argv)
 	pid_t pid, orig_pid;
 	char *outfile = NULL;
 	FILE *outfp = stderr;
-	int status, exit_code = 0, with_argv0 = 0, multiprocess = 0;
+	int status, exit_code = 0, with_argv0 = 0, multiprocess = 0, i;
 	struct process *proc, *proc2;
+	struct sigaction sa;
+	sigset_t sm;
 
 	/* TODO add option to trace signals with siginfo (-s) */
 	ARGBEGIN {
@@ -205,7 +206,6 @@ main(int argc, char **argv)
 	if (!argc)
 		usage();
 
-	/* Start program to trace */
 	orig_pid = fork();
 	switch (orig_pid) {
 	case -1:
@@ -219,7 +219,13 @@ main(int argc, char **argv)
 		break;
 	}
 
-	/* TODO need to reset signal handlers and mask */
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = SIG_DFL;
+	for (i = 1; i <= _NSIG; i++)
+		sigaction(i, &sa, NULL);
+	sigemptyset(&sm);
+	if (sigprocmask(SIG_SETMASK, &sm, NULL))
+		eprintf_and_kill(orig_pid, "sigprocmask SIG_SETMASK <empty sigset_t> NULL:");
 	outfp = outfile ? xfopen(outfile, "wb") : stderr;
 	setup_trace_output(outfp, multiprocess);
 	init_process_list();
@@ -229,10 +235,10 @@ main(int argc, char **argv)
 		pid = waitpid(-1, &status, __WALL | WCONTINUED);
 		if (pid < 0) {
 			if (errno == ECHILD)
-				return WEXITSTATUS(exit_code); /* TODO mimic kill by signal */
+				break;
 			if (errno == EINTR)
 				continue;
-			eprintf("waitpid -1 <buffer> __WALL:");
+			eprintf("waitpid -1 <buffer> __WALL|WCONTINUED:");
 		}
 
 		proc = find_process(pid);
@@ -250,10 +256,12 @@ main(int argc, char **argv)
 			if (pid == orig_pid)
 				exit_code = status;
 			if (WIFEXITED(status)) {
-				tprintf(proc, "\nProcess exited with value %i\n", WEXITSTATUS(status));
+				tprintf(proc, "\nProcess exited with value %i%s\n", WEXITSTATUS(status),
+				        __WCOREDUMP(status) ? ", core dumped" : "");
 			} else {
-				tprintf(proc, "\nProcess terminated by signal %i (%s: %s)\n", WTERMSIG(status),
-				        get_signum_name(WTERMSIG(status)), strsignal(WTERMSIG(status)));
+				tprintf(proc, "\nProcess terminated by signal %i (%s: %s)%s\n", WTERMSIG(status),
+				        get_signum_name(WTERMSIG(status)), strsignal(WTERMSIG(status)),
+				        __WCOREDUMP(status) ? ", core dumped" : "");
 			}
 			proc2 = proc->continue_on_exit;
 			remove_process(proc);
@@ -268,6 +276,14 @@ main(int argc, char **argv)
 
 	}
 
-	fclose(outfp);
-	return 0;
+	fflush(outfp);
+	if (outfp != stderr)
+		fclose(outfp);
+
+	if (WIFSIGNALED(exit_code)) {
+		exit_code = WTERMSIG(exit_code);
+		raise(exit_code);
+		exit_code += 128;
+	}
+	return exit_code;
 }

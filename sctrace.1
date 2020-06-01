@@ -1,0 +1,66 @@
+.TH SCTRACE 1 SCTRACE
+.SH NAME
+sctrace - Trace system calls
+.SH SYNOPSIS
+.B sctrace
+.RB [ -o
+.IR trace-output-file ]
+.RB [ -ft ]
+.RI ( command " |"
+.B -0
+.I command
+.IR argv0 )
+.RI [ argument "] ..."
+.SH DESCRIPTION
+.B sctrace
+starts the command specified in the
+.I command
+argument, with the additional arguments
+specified in the
+.I argument
+arguments, and prints information about
+all system calls it mades, to standard
+error (or the file specified in the
+.I trace-output-file
+argument if the
+.B -o
+option is used).
+.PP
+.B sctrace
+will also print information about process
+termination, received signals, and process
+suspension and continuation.
+.SH OPTIONS
+.TP
+.B -0
+This options specifies that the
+.I argv0
+argument shall be inserted immediately
+after the
+.I command
+argument. If this option is used, the
+very first argument (typically called
+.I argv[0]
+in C programs) for the trace process shall
+the string specified in the
+.I argv0
+argument rather than the
+.I command
+argument.
+.TP
+.B -f
+Recursively trace all new children and threads.
+This option implies
+.BR -t .
+.TP
+.BR -o " "\fItrace-output-file\fI
+Write trace outputs to the file specified in the
+.I trace-output-file
+argument.
+.TP
+.B -t
+Trace threads.
+.SH "SEE ALSO"
+.BR ptrace (2),
+.BR strace (1),
+.BR ltrace (1)

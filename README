@@ -1,0 +1,32 @@
+NAME
+	sctrace - Trace system calls
+
+SYNOPSIS
+	sctrace [-o trace-output-file] [-ft] (command | -0 command argv0) [argument] ...
+
+DESCRIPTION
+	sctrace starts the command specified in the command argument, with the
+	additional arguments specified in the argument arguments, and prints
+	information about all system calls it mades, to standard error (or the
+	file specified in the trace-output-file argument if the -o option is used).
+
+	sctrace will also print information about process termination, received signals,
+	and process suspension and continuation.
+
+OPTIONS
+	-0	This  options  specifies that the argv0 argument shall be inserted
+		immediately after the command argument. If this option is used, the
+		very first argument (typically called argv[0] in C programs) for the
+		trace process shall the string specified in the argv0 argument rather
+		than the command argument.
+
+	-f	Recursively trace all new children and threads. This option implies -t.
+
+	-o trace-output-file
+		Write trace outputs to the file specified in the trace-output-file
+		argument.
+
+	-t	Trace threads.
+
+SEE ALSO
+	ptrace(2), strace(1), ltrace(1)

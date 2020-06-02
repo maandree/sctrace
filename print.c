@@ -962,7 +962,7 @@ print_systemcall_exit(struct process *proc)
 		for (i = 0; i < 6; i++) {
 			if (!proc->args[i] || !proc->outputs[i].fmt)
 				continue;
-			tprintf(proc, "\tOutput to parameter %zu: ", i + 1);
+			tprintf(proc, "        Output to parameter %zu: ", i + 1);
 			switch (proc->outputs[i].fmt) {
 
 			case 'p':

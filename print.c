@@ -954,9 +954,7 @@ print_systemcall_exit(struct process *proc)
 		tprintf(proc, "= %lli", (long long int)proc->ret);
 
 	if (RETURN_IS_ERROR(proc->ret)) {
-		tprintf(proc, " (%s: %s)", get_errno_name(-(int)proc->ret), strerror(-(int)proc->ret));
-		tprintf(proc, "\n");
-
+		tprintf(proc, " (%s: %s)\n", get_errno_name(-(int)proc->ret), strerror(-(int)proc->ret));
 	} else {
 		tprintf(proc, "\n");
 		for (i = 0; i < 6; i++) {

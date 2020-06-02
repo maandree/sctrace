@@ -126,6 +126,13 @@ found:
 }
 
 
+static int
+istrigraphfinal(char c)
+{
+	return c == '=' || c == '(' || c == '/' || c == ')' || c == '\'' || c == '<' || c == '!' || c == '>' || c == '-';
+}
+
+
 char *
 escape_memory(char *str, size_t m)
 {
@@ -133,7 +140,8 @@ escape_memory(char *str, size_t m)
 	size_t size = 0;
 	size_t len = 0;
 	size_t n = 0;
-	int need_new_string = 0;
+	int need_new_string_hex = 0;
+	int trigraph_state = 0;
 	if (!str) {
 		str = strdup("NULL");
 		if (!str)
@@ -180,17 +188,24 @@ escape_memory(char *str, size_t m)
 				add_char(&ret, &size, &len, 'x');
 				add_char(&ret, &size, &len, "0123456789abcdef"[(int)*(unsigned char *)s >> 4]);
 				add_char(&ret, &size, &len, "0123456789abcdef"[(int)*(unsigned char *)s & 15]);
-				need_new_string = 1;
+				need_new_string_hex = 1;
 				continue;
 			}
 		} else {
-			if (need_new_string && isxdigit(*s)) {
+			if ((need_new_string_hex && isxdigit(*s)) ||
+			    (trigraph_state == 2 && istrigraphfinal(*s))) {
 				add_char(&ret, &size, &len, '"');
 				add_char(&ret, &size, &len, '"');
+			} else if (*s == '?') {
+				trigraph_state += trigraph_state < 2;
+				add_char(&ret, &size, &len, *s);
+				need_new_string_hex = 0;
+				continue;
 			}
 			add_char(&ret, &size, &len, *s);
 		}
-		need_new_string = 0;
+		trigraph_state = 0;
+		need_new_string_hex = 0;
 	}
 	add_char(&ret, &size, &len, '"');
 	add_char(&ret, &size, &len, '\0');

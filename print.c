@@ -459,7 +459,7 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 				tprintf(proc, "&");
 			}
 			if (arg)
-				tprintf(proc, "%#llu", arg);
+				tprintf(proc, "%#llx", arg);
 			else
 				tprintf(proc, "NULL");
 		} else if (*fmt >= '1' && *fmt <= '6') {
@@ -947,9 +947,9 @@ print_systemcall_exit(struct process *proc)
 	else if (proc->ret_type == XLLong)
 		tprintf(proc, "= %#llx", (unsigned long long int)proc->ret);
 	else if (proc->ret_type == Ptr && (long long int)proc->ret >= 0 && proc->ptr_is_int)
-		tprintf(proc, "= %#u", (unsigned int)proc->ret);
+		tprintf(proc, "= %#x", (unsigned int)proc->ret);
 	else if (proc->ret_type == Ptr && (long long int)proc->ret >= 0)
-		tprintf(proc, "= %#llu", proc->ret);
+		tprintf(proc, "= %#llx", proc->ret);
 	else
 		tprintf(proc, "= %lli", (long long int)proc->ret);
 
@@ -970,14 +970,14 @@ print_systemcall_exit(struct process *proc)
 					if (get_struct(proc->pid, proc->args[i], buf, sizeof(int), &err))
 						tprintf(proc, "%s\n", err);
 					else if (*(unsigned int *)buf)
-						tprintf(proc, "%#u\n", *(unsigned int *)buf);
+						tprintf(proc, "%#x\n", *(unsigned int *)buf);
 					else
 						tprintf(proc, "NULL\n");
 				} else {
 					if (get_struct(proc->pid, proc->args[i], buf, sizeof(long int), &err))
 						tprintf(proc, "%s\n", err);
 					else if (*(unsigned long int *)buf)
-						tprintf(proc, "%#lu\n", *(unsigned long int *)buf);
+						tprintf(proc, "%#lx\n", *(unsigned long int *)buf);
 					else
 						tprintf(proc, "NULL\n");
 				}

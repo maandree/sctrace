@@ -5,6 +5,9 @@
 char *
 get_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp)
 {
+#if defined(__x86_64__) && defined(__IPL32__)
+# error "x32 is not supported, would not be able to read memory from 64-bit applications with current method"
+#endif
 	struct iovec inv, outv;
 	size_t off = 0, size = 0, page_off, read_size;
 	char *out = NULL, *in = (char *)addr, *p;
@@ -39,14 +42,21 @@ int
 get_struct(pid_t pid, unsigned long int addr, void *out, size_t size, const char **errorp)
 {
 	struct iovec inv, outv;
+	if (!addr) {
+		*errorp = "NULL";
+		return -1;
+	}
 	*errorp = NULL;
+#if defined(__x86_64__) && defined(__IPL32__)
+# error "x32 is not supported, would not be able to read memory from 64-bit applications with current method"
+#endif
 	inv.iov_base  = (void *)addr;
 	inv.iov_len   = size;
 	outv.iov_base = out;
 	outv.iov_len  = size;
 	if (process_vm_readv(pid, &outv, 1, &inv, 1, 0) == (ssize_t)size)
 		return 0;
-	*errorp = errno == EFAULT ? "<invalid address>" : "<an error occured during reading of string>";
+	*errorp = errno == EFAULT ? "<invalid address>" : "<an error occured during reading of memory>";
 	return -1;
 }
 
@@ -63,7 +73,6 @@ get_memory(pid_t pid, unsigned long int addr, size_t n, const char **errorp)
 	}
 	return out;
 }
-
 
 
 static void
@@ -187,4 +196,30 @@ escape_memory(char *str, size_t m)
 	add_char(&ret, &size, &len, '\0');
 	free(str);
 	return ret;
+}
+
+
+char *
+get_escaped_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp)
+{
+	char *r;
+	if (!addr) {
+		*errorp = "NULL";
+		return NULL;
+	}
+	r = get_string(pid, addr, lenp, errorp);
+	return escape_memory(r, *lenp);
+}
+
+
+char *
+get_escaped_memory(pid_t pid, unsigned long int addr, size_t n, const char **errorp)
+{
+	char *r;
+	if (!addr) {
+		*errorp = "NULL";
+		return NULL;
+	}
+	r = get_memory(pid, addr, n, errorp);
+	return escape_memory(r, n);
 }

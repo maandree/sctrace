@@ -1,10 +1,5 @@
 /* See LICENSE file for copyright and license details. */
-#include <linux/elf.h>
-#include <sys/ptrace.h>
-#include <linux/ptrace.h> /* After <sys/ptrace.h> */
-#include <sys/syscall.h>
 #include <sys/uio.h>
-#include <sys/user.h>
 #include <sys/wait.h>
 #include <ctype.h>
 #include <errno.h>
@@ -17,37 +12,15 @@
 #include <string.h>
 #include <unistd.h>
 
-#if defined(__x86_64__) && !defined(__IPL32__)
-# include "arch-x86-64.h"
+#if defined(__linux__)
+# include "linux/os.h"
 #else
-# error "This program is only implemented for x86-64"
-#endif
-
-#if !defined(__linux__)
 # error "This program is only implemented for Linux"
 #endif
 
 #include "arg.h"
 #include "list-errnos.h"
 #include "list-signums.h"
-
-
-#ifndef ERESTARTSYS
-# define ERESTARTSYS    512
-# define ALSO_ERESTARTSYS
-#endif
-#ifndef ERESTARTNOINTR
-# define ERESTARTNOINTR 513
-# define ALSO_ERESTARTNOINTR
-#endif
-#ifndef ERESTARTNOHAND
-# define ERESTARTNOHAND 514
-# define ALSO_ERESTARTNOHAND
-#endif
-#ifndef ERESTART_RESTARTBLOCK
-# define ERESTART_RESTARTBLOCK 516
-# define ALSO_ERESTART_RESTARTBLOCK
-#endif
 
 
 struct process;
@@ -103,6 +76,11 @@ struct process {
 	unsigned long long int ret;
 	enum type ret_type;
 	struct output outputs[6];
+	/* multiarch support */
+	unsigned long long int scall_xor;
+	int long_is_int;
+	int ptr_is_int;
+	int mode;
 
 	/* vfork(2) data */
 	struct process *continue_on_exit;
@@ -119,6 +97,8 @@ char *get_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **e
 int get_struct(pid_t pid, unsigned long int addr, void *out, size_t size, const char **errorp);
 char *get_memory(pid_t pid, unsigned long int addr, size_t n, const char **errorp);
 char *escape_memory(char *str, size_t m);
+char *get_escaped_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp);
+char *get_escaped_memory(pid_t pid, unsigned long int addr, size_t n, const char **errorp);
 
 /* print.c */
 void print_systemcall(struct process *proc);

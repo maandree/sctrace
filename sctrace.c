@@ -18,10 +18,6 @@ static void
 handle_syscall(struct process *proc)
 {
 	struct user_regs_struct regs;
-	struct iovec iov = {
-		.iov_base = &regs,
-		.iov_len = sizeof(regs),
-	};
 
 	switch ((int)proc->state) {
 	default:
@@ -29,24 +25,11 @@ handle_syscall(struct process *proc)
 		if (ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs))
 			eprintf("ptrace PTRACE_GETREGS %ju NULL <buffer>:", (uintmax_t)proc->pid);
 		proc->scall = regs.SYSCALL_NUM_REG;
-		proc->args[0] = regs.SYSCALL_ARG1_REG;
-		proc->args[1] = regs.SYSCALL_ARG2_REG;
-		proc->args[2] = regs.SYSCALL_ARG3_REG;
-		proc->args[3] = regs.SYSCALL_ARG4_REG;
-		proc->args[4] = regs.SYSCALL_ARG5_REG;
-		proc->args[5] = regs.SYSCALL_ARG6_REG;
-
-		/* Check architecture */
-		if (ptrace(PTRACE_GETREGSET, proc->pid, NT_PRSTATUS, &iov)) {
-			eprintf("ptrace PTRACE_GETREGSET %ju NT_PRSTATUS {.iov_base=<buffer>, .iov_len=%zu}:",
-			        (uintmax_t)proc->pid, sizeof(regs));
-		} else if (iov.iov_len != sizeof(regs)) {
-			tprintf(proc, "Process is running as i386, this is not yet supported\n");
-			exit(1);
-		} else if (proc->scall & __X32_SYSCALL_BIT) {
-			tprintf(proc, "Process is running as x32, this is not yet supported\n");
-			exit(1);
-		}
+#ifdef CHECK_ARCHITECTURE
+		CHECK_ARCHITECTURE(proc, &regs);
+		proc->scall ^= proc->scall_xor;
+#endif
+		GET_SYSCALL_ARGUMENTS(proc, &regs);
 
 		/* Print system call */
 		print_systemcall(proc);
@@ -115,7 +98,7 @@ handle_event(struct process *proc, int status)
 	struct process *proc2;
 
 	sig = WSTOPSIG(status);
-	trace_event = ((status >> 8) ^ SIGTRAP) >> 8;
+	trace_event = status >> 16;
 	switch (trace_event) {
 
 	case PTRACE_EVENT_VFORK:

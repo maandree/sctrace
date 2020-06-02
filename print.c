@@ -13,48 +13,15 @@
 #include <sched.h>
 #include <time.h>
 
-#ifndef CLONE_NEWTIME
-# define CLONE_NEWTIME 0x00000080
+#if defined(__linux__)
+# ifndef CLONE_NEWTIME
+#  define CLONE_NEWTIME 0x00000080
+# endif
 #endif
 
 
-static char *
-get_escaped_string_or_null(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp)
-{
-	char *r;
-	if (!addr) {
-		*errorp = "NULL";
-		return NULL;
-	}
-	r = get_string(pid, addr, lenp, errorp);
-	return escape_memory(r, *lenp);
-}
-
-static char *
-get_escaped_memory_or_null(pid_t pid, unsigned long int addr, size_t n, const char **errorp)
-{
-	char *r;
-	if (!addr) {
-		*errorp = "NULL";
-		return NULL;
-	}
-	r = get_memory(pid, addr, n, errorp);
-	return escape_memory(r, n);
-}
-
-static int
-get_struct_or_null(pid_t pid, unsigned long int addr, void *out, size_t size, const char **errorp)
-{
-	if (!addr) {
-		*errorp = "NULL";
-		return -1;
-	}
-	return get_struct(pid, addr, out, size, errorp);
-}
-
-
-
-#define CASE(N) if (proc->args[arg_index] == N) return tprintf(proc, "%s", #N)
+#define CASE(N)\
+	if (proc->args[arg_index] == N) return tprintf(proc, "%s", #N)
 
 #define FLAGS_BEGIN\
 	do {\
@@ -146,7 +113,7 @@ print_timespec(struct process *proc, size_t arg_index)
 {
 	struct timespec ts;
 	const char *err;
-	if (get_struct_or_null(proc->pid, proc->args[arg_index], &ts, sizeof(ts), &err)) {
+	if (get_struct(proc->pid, proc->args[arg_index], &ts, sizeof(ts), &err)) {
 		tprintf(proc, "%s", err);
 		return;
 	}
@@ -270,7 +237,7 @@ print_int_pair(struct process *proc, size_t arg_index)
 {
 	int pair[2];
 	const char *err;
-	if (get_struct_or_null(proc->pid, proc->args[arg_index], pair, sizeof(pair), &err)) {
+	if (get_struct(proc->pid, proc->args[arg_index], pair, sizeof(pair), &err)) {
 		tprintf(proc, "%s", err);
 		return;
 	}
@@ -473,15 +440,26 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 
 		if (*fmt == 'p') {
 		p_fmt:
+			if (proc->ptr_is_int)
+				arg = (unsigned int)arg;
 			if (input) {
-				if (get_struct_or_null(proc->pid, arg, &arg, sizeof(void *), &err)) {
-					tprintf(proc, "%s", err);
-					goto next;
+				if (proc->ptr_is_int) {
+					if (get_struct(proc->pid, arg, &arg, sizeof(int), &err)) {
+						tprintf(proc, "%s", err);
+						goto next;
+					}
+					arg = *(unsigned int *)&arg;
+				} else {
+					if (get_struct(proc->pid, arg, &arg, sizeof(long int), &err)) {
+						tprintf(proc, "%s", err);
+						goto next;
+					}
+					arg = *(unsigned long int *)&arg;
 				}
 				tprintf(proc, "&");
 			}
 			if (arg)
-				tprintf(proc, "%p", (void *)arg);
+				tprintf(proc, "%#llu", arg);
 			else
 				tprintf(proc, "NULL");
 		} else if (*fmt >= '1' && *fmt <= '6') {
@@ -490,16 +468,16 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 				funcs[nfuncs++] = va_arg(ap, Function);
 			funcs[func - 1](proc, i);
 		} else if (*fmt == 's') {
-			str = get_escaped_string_or_null(proc->pid, arg, &len, &err);
+			str = get_escaped_string(proc->pid, arg, &len, &err);
 			tprintf(proc, "%s", str ? str : err);
 			free(str);
 		} else if (*fmt == 'm') {
-			str = get_escaped_memory_or_null(proc->pid, arg, (size_t)args[i + 1], &err);
+			str = get_escaped_memory(proc->pid, arg, (size_t)args[i + 1], &err);
 			tprintf(proc, "%s", str ? str : err);
 			free(str);
 		} else if (*fmt == 'F') {
 			if (input) {
-				if (get_struct_or_null(proc->pid, arg, &arg, sizeof(int), &err)) {
+				if (get_struct(proc->pid, arg, &arg, sizeof(int), &err)) {
 					tprintf(proc, "%s", err);
 					goto next;
 				}
@@ -510,6 +488,8 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 			else
 				tprintf(proc, "%i", (int)arg);
 		} else {
+			if (ells == 1 && proc->long_is_int)
+				ells = 0;
 			if (ells == 1)
 				size = sizeof(long int);
 			else if (ells > 1)
@@ -521,7 +501,7 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 			else
 				size = sizeof(int);
 			if (input) {
-				if (get_struct_or_null(proc->pid, arg, &arg, size, &err)) {
+				if (get_struct(proc->pid, arg, &arg, size, &err)) {
 					tprintf(proc, "%s", err);
 					goto next;
 				}
@@ -942,13 +922,13 @@ print_systemcall_exit(struct process *proc)
 	char *str, buf[32];
 	const char *err;
 
-	if (proc->ret_type == Int)
+	if (proc->ret_type == Int || (proc->long_is_int && proc->ret_type == Long))
 		tprintf(proc, "= %i", (int)proc->ret);
-	else if (proc->ret_type == UInt)
+	else if (proc->ret_type == UInt || (proc->long_is_int && proc->ret_type == ULong))
 		tprintf(proc, "= %u", (unsigned int)proc->ret);
-	else if (proc->ret_type == OInt)
+	else if (proc->ret_type == OInt || (proc->long_is_int && proc->ret_type == OLong))
 		tprintf(proc, "= %#o", (unsigned int)proc->ret);
-	else if (proc->ret_type == XInt)
+	else if (proc->ret_type == XInt || (proc->long_is_int && proc->ret_type == XLong))
 		tprintf(proc, "= %#x", (unsigned int)proc->ret);
 	else if (proc->ret_type == Long)
 		tprintf(proc, "= %li", (long int)proc->ret);
@@ -966,12 +946,14 @@ print_systemcall_exit(struct process *proc)
 		tprintf(proc, "= %#llo", (unsigned long long int)proc->ret);
 	else if (proc->ret_type == XLLong)
 		tprintf(proc, "= %#llx", (unsigned long long int)proc->ret);
+	else if (proc->ret_type == Ptr && (long long int)proc->ret >= 0 && proc->ptr_is_int)
+		tprintf(proc, "= %#u", (unsigned int)proc->ret);
 	else if (proc->ret_type == Ptr && (long long int)proc->ret >= 0)
-		tprintf(proc, "= %p", (void *)proc->ret);
+		tprintf(proc, "= %#llu", proc->ret);
 	else
-		tprintf(proc, "= %li", (long int)proc->ret);
+		tprintf(proc, "= %lli", (long long int)proc->ret);
 
-	if ((unsigned long long int)proc->ret > -(unsigned long long int)PAGE_SIZE) {
+	if (RETURN_IS_ERROR(proc->ret)) {
 		tprintf(proc, " (%s: %s)", get_errno_name(-(int)proc->ret), strerror(-(int)proc->ret));
 		tprintf(proc, "\n");
 
@@ -984,17 +966,26 @@ print_systemcall_exit(struct process *proc)
 			switch (proc->outputs[i].fmt) {
 
 			case 'p':
-				if (get_struct_or_null(proc->pid, proc->args[i], buf, sizeof(void *), &err))
-					tprintf(proc, "%s\n", err);
-				else if (*(void **)buf)
-					tprintf(proc, "%p\n", *(void **)buf);
-				else
-					tprintf(proc, "NULL\n");
+				if (proc->ptr_is_int) {
+					if (get_struct(proc->pid, proc->args[i], buf, sizeof(int), &err))
+						tprintf(proc, "%s\n", err);
+					else if (*(unsigned int *)buf)
+						tprintf(proc, "%#u\n", *(unsigned int *)buf);
+					else
+						tprintf(proc, "NULL\n");
+				} else {
+					if (get_struct(proc->pid, proc->args[i], buf, sizeof(long int), &err))
+						tprintf(proc, "%s\n", err);
+					else if (*(unsigned long int *)buf)
+						tprintf(proc, "%#lu\n", *(unsigned long int *)buf);
+					else
+						tprintf(proc, "NULL\n");
+				}
 				break;
 
 			case 'm':
 				value = proc->args[i + 1] < proc->ret ? proc->args[i + 1] : proc->ret;
-				str = get_escaped_memory_or_null(proc->pid, proc->args[i], (size_t)value, &err);
+				str = get_escaped_memory(proc->pid, proc->args[i], (size_t)value, &err);
 				tprintf(proc, "%s\n", str ? str : err);
 				free(str);
 				break;
@@ -1005,6 +996,7 @@ print_systemcall_exit(struct process *proc)
 				break;
 
 			default:
+				/* .ells is adjust for .long_is_int when set */
 				if (proc->outputs[i].ells == 1)
 					size = sizeof(unsigned long int);
 				else if (proc->outputs[i].ells > 1)
@@ -1015,7 +1007,7 @@ print_systemcall_exit(struct process *proc)
 					size = sizeof(unsigned char);
 				else
 					size = sizeof(unsigned int);
-				if (get_struct_or_null(proc->pid, proc->args[i], buf, size, &err)) {
+				if (get_struct(proc->pid, proc->args[i], buf, size, &err)) {
 					tprintf(proc, "%s\n", err);
 					break;
 				}

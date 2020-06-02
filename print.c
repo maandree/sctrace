@@ -676,7 +676,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(io_cancel);
 	GENERIC_HANDLER(io_destroy);
 	GENERIC_HANDLER(io_getevents);
-	GENERIC_HANDLER(io_pgetevents);
+	UNDOCUMENTED(io_pgetevents);
 	GENERIC_HANDLER(io_setup);
 	GENERIC_HANDLER(io_submit);
 	UNDOCUMENTED(io_uring_enter);

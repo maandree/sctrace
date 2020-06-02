@@ -9,7 +9,7 @@ static struct process tail;
 void
 init_process_list(void)
 {
-        head.next = &tail;
+	head.next = &tail;
 	tail.prev = &head;
 }
 
@@ -17,25 +17,25 @@ init_process_list(void)
 struct process *
 find_process(pid_t pid)
 {
-        struct process *p;
-        for (p = head.next; p->next; p = p->next)
-                if (p->pid == pid)
-                        return p;
-        return NULL;
+	struct process *p;
+	for (p = head.next; p->next; p = p->next)
+		if (p->pid == pid)
+			return p;
+	return NULL;
 }
 
 
 struct process *
 add_process(pid_t pid, unsigned long int trace_options)
 {
-        struct process *proc;
+	struct process *proc;
 	int status;
 
-        proc = calloc(1, sizeof(*proc));
+	proc = calloc(1, sizeof(*proc));
 	if (!proc)
-                eprintf("calloc: %s\n");
-        proc->pid = pid;
-        proc->next = &tail;
+		eprintf("calloc: %s\n");
+	proc->pid = pid;
+	proc->next = &tail;
 	proc->prev = tail.prev;
 	proc->prev->next = proc;
 	tail.prev = proc;

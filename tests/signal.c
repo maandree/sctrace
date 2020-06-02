@@ -1,4 +1,5 @@
 #include <signal.h>
+#include <time.h>
 #include <unistd.h>
 
 static void
@@ -10,9 +11,10 @@ interrupt()
 int
 main(void)
 {
+	struct timespec ts = {0, 100000000L};
 	signal(SIGINT, interrupt);
 	kill(getpid(), SIGINT);
-	usleep(100000U);
+	nanosleep(&ts, NULL);
 	write(-1, "qwerty\n", 7);
 	return 0;
 }

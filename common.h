@@ -1,9 +1,7 @@
 /* See LICENSE file for copyright and license details. */
-#if !defined __x86_64__ || defined __IPL32__
-# error "This program is only implemented for x86-64"
-#endif
-
+#include <linux/elf.h>
 #include <sys/ptrace.h>
+#include <linux/ptrace.h> /* After <sys/ptrace.h> */
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #include <sys/user.h>
@@ -18,6 +16,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#if defined(__x86_64__) && !defined(__IPL32__)
+# include "arch-x86-64.h"
+#else
+# error "This program is only implemented for x86-64"
+#endif
+
+#if !defined(__linux__)
+# error "This program is only implemented for Linux"
+#endif
 
 #include "arg.h"
 #include "list-errnos.h"

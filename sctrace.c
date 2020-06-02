@@ -18,19 +18,35 @@ static void
 handle_syscall(struct process *proc)
 {
 	struct user_regs_struct regs;
+	struct iovec iov = {
+		.iov_base = &regs,
+		.iov_len = sizeof(regs),
+	};
 
 	switch ((int)proc->state) {
 	default:
 		/* Get system call arguments */
 		if (ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs))
 			eprintf("ptrace PTRACE_GETREGS %ju NULL <buffer>:", (uintmax_t)proc->pid);
-		proc->scall = regs.orig_rax;
-		proc->args[0] = regs.rdi;
-		proc->args[1] = regs.rsi;
-		proc->args[2] = regs.rdx;
-		proc->args[3] = regs.r10;
-		proc->args[4] = regs.r8;
-		proc->args[5] = regs.r9;
+		proc->scall = regs.SYSCALL_NUM_REG;
+		proc->args[0] = regs.SYSCALL_ARG1_REG;
+		proc->args[1] = regs.SYSCALL_ARG2_REG;
+		proc->args[2] = regs.SYSCALL_ARG3_REG;
+		proc->args[3] = regs.SYSCALL_ARG4_REG;
+		proc->args[4] = regs.SYSCALL_ARG5_REG;
+		proc->args[5] = regs.SYSCALL_ARG6_REG;
+
+		/* Check architecture */
+		if (ptrace(PTRACE_GETREGSET, proc->pid, NT_PRSTATUS, &iov)) {
+			eprintf("ptrace PTRACE_GETREGSET %ju NT_PRSTATUS {.iov_base=<buffer>, .iov_len=%zu}:",
+			        (uintmax_t)proc->pid, sizeof(regs));
+		} else if (iov.iov_len != sizeof(regs)) {
+			tprintf(proc, "Process is running as i386, this is not yet supported\n");
+			exit(1);
+		} else if (proc->scall & __X32_SYSCALL_BIT) {
+			tprintf(proc, "Process is running as x32, this is not yet supported\n");
+			exit(1);
+		}
 
 		/* Print system call */
 		print_systemcall(proc);
@@ -51,9 +67,9 @@ handle_syscall(struct process *proc)
 
 		/* Get or set return */
 		if (proc->state == Syscall) {
-			proc->ret = regs.rax;
+			proc->ret = regs.SYSCALL_RET_REG;
 		} else {
-			regs.rax = proc->ret;
+			regs.SYSCALL_RET_REG = proc->ret;
 			if (ptrace(PTRACE_SETREGS, proc->pid, NULL, &regs))
 				eprintf("ptrace PTRACE_SETREGS %ju NULL <buffer>:", (uintmax_t)proc->pid);
 			if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
@@ -104,7 +120,7 @@ handle_event(struct process *proc, int status)
 
 	case PTRACE_EVENT_VFORK:
 		tprintf(proc, "\nProcess stopped by vfork until child exits or exec(2)s\n");
-		/* fall thought */
+		/* fall through */
 	case PTRACE_EVENT_FORK:
 	case PTRACE_EVENT_CLONE:
 		if (ptrace(PTRACE_GETEVENTMSG, proc->pid, NULL, &event))
@@ -259,11 +275,11 @@ main(int argc, char **argv)
 				exit_code = status;
 			if (WIFEXITED(status)) {
 				tprintf(proc, "\nProcess exited with value %i%s\n", WEXITSTATUS(status),
-				        WCOREDUMP(status) ? ", core dumped" : "");
+					WCOREDUMP(status) ? ", core dumped" : "");
 			} else {
 				tprintf(proc, "\nProcess terminated by signal %i (%s: %s)%s\n", WTERMSIG(status),
-				        get_signum_name(WTERMSIG(status)), strsignal(WTERMSIG(status)),
-				        WCOREDUMP(status) ? ", core dumped" : "");
+					get_signum_name(WTERMSIG(status)), strsignal(WTERMSIG(status)),
+					WCOREDUMP(status) ? ", core dumped" : "");
 			}
 			proc2 = proc->continue_on_exit;
 			remove_process(proc);

@@ -12,6 +12,7 @@ OBJ =\
 	util.o
 
 HDR =\
+	arch-x86-64.h\
 	arg.h\
 	common.h\
 	list-errnos.h\

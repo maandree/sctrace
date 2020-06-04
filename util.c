@@ -92,7 +92,7 @@ xfopen(const char *file, const char *mode)
 		tmp = strtol(num, (void *)&num, 10);
 		if (!errno && tmp >= 0 &&
 #if INT_MAX < LONG_MAX
-		    tmp < INT_MAX &&
+		    tmp <= INT_MAX &&
 #endif
 		    !*num) {
 			ret = fdopen((int)tmp, mode);

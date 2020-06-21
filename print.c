@@ -32,7 +32,7 @@
 
 #define FLAG(FLAG)\
 		do {\
-			_Static_assert((FLAG) != 0);\
+			_Static_assert((FLAG) != 0, #FLAG" is 0 and must not be included");\
 			if (flags & (FLAG)) {\
 				p = stpcpy(p, "|"#FLAG);\
 				flags ^= (FLAG);\
@@ -46,7 +46,7 @@
 	} while (0)
 
 #define FLAGS_END_DEFAULT(FLAG)\
-		_Static_assert((FLAG) == 0);\
+		_Static_assert((FLAG) == 0, #FLAG" is not 0 and cannot be the default");\
 		if (!flags && !*buf)\
 			sprintf(p, "|%s", #FLAG);\
 		else if (flags || !*buf)\

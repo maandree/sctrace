@@ -1,12 +1,12 @@
 /* See LICENSE file for copyright and license details. */
 #include "common.h"
 
-#include <linux/fs.h>
 #include <linux/memfd.h>
 #include <sys/epoll.h>
 #include <sys/inotify.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
+#include <linux/fs.h> /* after <sys/mount.h> */
 #include <sys/random.h>
 #include <sys/socket.h>
 #include <sys/xattr.h>

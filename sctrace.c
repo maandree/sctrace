@@ -1,14 +1,12 @@
 /* See LICENSE file for copyright and license details. */
 #include "common.h"
 
-#include <asm/unistd.h>
-
 
 char *argv0;
 static unsigned long int trace_options = PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC;
 
 
-static void
+_Noreturn static void
 usage(void)
 {
 	fprintf(stderr, "usage: %s [-o trace-output-file] [-ft] (command | -0 command argv0) [argument] ...\n", argv0);
@@ -75,6 +73,7 @@ handle_syscall(struct process *proc)
 
 	case Exec:
 		proc->silent_until_execed -= (proc->silent_until_execed == 2);
+		FALL_THROUGH
 		/* fall through */
 	case VforkParent:
 		if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
@@ -105,6 +104,7 @@ handle_event(struct process *proc, int status)
 
 	case PTRACE_EVENT_VFORK:
 		tprintf(proc, "\nProcess stopped by vfork until child exits or exec(2)s\n");
+		FALL_THROUGH
 		/* fall through */
 	case PTRACE_EVENT_FORK:
 	case PTRACE_EVENT_CLONE:
@@ -198,6 +198,7 @@ main(int argc, char **argv)
 	case 'f':
 		trace_options |= PTRACE_O_TRACEFORK;
 		trace_options |= PTRACE_O_TRACEVFORK;
+		FALL_THROUGH
 		/* fall through */
 	case 't':
 		trace_options |= PTRACE_O_TRACECLONE;

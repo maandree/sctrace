@@ -2,6 +2,11 @@
 #include "common.h"
 
 
+#if defined(__GNUC__) || defined(__clang__)
+# pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#endif
+
+
 static FILE *trace_fp;
 static char last_char = '\n';
 static pid_t last_pid = 0;

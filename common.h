@@ -1,4 +1,5 @@
 /* See LICENSE file for copyright and license details. */
+#include <asm/unistd.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
 #include <ctype.h>
@@ -11,6 +12,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#if defined(__clang__)
+# define FALL_THROUGH __attribute__((fallthrough));
+#else
+# define FALL_THROUGH
+#endif
+
+#if defined(__clang__)
+# pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+# pragma clang diagnostic ignored "-Wpadded"
+#elif defined(__GNUC__)
+# pragma GCC diagnostic ignored "-Wpadded"
+# pragma GCC diagnostic ignored "-Wsuggest-attribute=pure"
+# pragma GCC diagnostic ignored "-Wsuggest-attribute=format"
+#endif
 
 #if defined(__linux__)
 # include "linux/os.h"

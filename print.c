@@ -22,7 +22,12 @@
 
 
 #define CASE(N)\
-	if (proc->args[arg_index] == N) return tprintf(proc, "%s", #N)
+	do {\
+		if (proc->args[arg_index] == N) {\
+			tprintf(proc, "%s", #N);\
+			return;\
+		}\
+	} while (0)
 
 #define FLAGS_BEGIN\
 	do {\

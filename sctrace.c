@@ -1,6 +1,8 @@
 /* See LICENSE file for copyright and license details. */
 #include "common.h"
 
+#include <asm/unistd.h>
+
 
 char *argv0;
 static unsigned long int trace_options = PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC;

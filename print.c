@@ -389,11 +389,23 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 	typedef void (*Function)(struct process *proc, size_t arg_index);
 	Function funcs[6];
 	size_t i, nfuncs = 0, func, len, size;
-	unsigned long long int *args = proc->args, arg, value;
+	unsigned long long int *args = proc->args, value;
 	int ells = 0, output = 0, input = 0;
 	char *str;
 	const char *err;
 	va_list ap;
+	union {
+		unsigned long long int llu;
+		unsigned long int       lu;
+		unsigned int             u;
+		unsigned short int      hu;
+		unsigned char          hhu;
+		long long int          lli;
+		long int                li;
+		int                      i;
+		short int               hi;
+		signed char            hhi;
+	} arg;
 
 	va_start(ap, fmt);
 	tprintf(proc, "%s(", scall);
@@ -416,7 +428,7 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 			continue;
 		}
 
-		arg = args[i];
+		arg.llu = args[i];
 
 		if (output) {
 			output = 0;
@@ -447,24 +459,22 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 		if (*fmt == 'p') {
 		p_fmt:
 			if (proc->ptr_is_int)
-				arg = (unsigned int)arg;
+				arg.u = (unsigned int)arg.llu;
 			if (input) {
 				if (proc->ptr_is_int) {
-					if (get_struct(proc->pid, arg, &arg, sizeof(int), &err)) {
+					if (get_struct(proc->pid, arg.llu, &arg.i, sizeof(int), &err)) {
 						tprintf(proc, "%s", err);
 						goto next;
 					}
-					arg = *(unsigned int *)&arg;
 				} else {
-					if (get_struct(proc->pid, arg, &arg, sizeof(long int), &err)) {
+					if (get_struct(proc->pid, arg.llu, &arg.li, sizeof(long int), &err)) {
 						tprintf(proc, "%s", err);
 						goto next;
 					}
-					arg = *(unsigned long int *)&arg;
 				}
 				tprintf(proc, "&");
 			}
-			if (arg)
+			if (arg.llu)
 				tprintf(proc, "%#llx", arg);
 			else
 				tprintf(proc, "NULL");
@@ -474,25 +484,25 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 				funcs[nfuncs++] = va_arg(ap, Function);
 			funcs[func - 1](proc, i);
 		} else if (*fmt == 's') {
-			str = get_escaped_string(proc->pid, arg, &len, &err);
+			str = get_escaped_string(proc->pid, arg.llu, &len, &err);
 			tprintf(proc, "%s", str ? str : err);
 			free(str);
 		} else if (*fmt == 'm') {
-			str = get_escaped_memory(proc->pid, arg, (size_t)args[i + 1], &err);
+			str = get_escaped_memory(proc->pid, arg.llu, (size_t)args[i + 1], &err);
 			tprintf(proc, "%s", str ? str : err);
 			free(str);
 		} else if (*fmt == 'F') {
 			if (input) {
-				if (get_struct(proc->pid, arg, &arg, sizeof(int), &err)) {
+				if (get_struct(proc->pid, arg.llu, &arg.i, sizeof(int), &err)) {
 					tprintf(proc, "%s", err);
 					goto next;
 				}
 				tprintf(proc, "&");
 			}
-			if ((int)arg == AT_FDCWD)
+			if (arg.i == AT_FDCWD)
 				tprintf(proc, "AT_FDCWD");
 			else
-				tprintf(proc, "%i", (int)arg);
+				tprintf(proc, "%i", arg.i);
 		} else {
 			if (ells == 1 && proc->long_is_int)
 				ells = 0;
@@ -507,13 +517,22 @@ printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
 			else
 				size = sizeof(int);
 			if (input) {
-				if (get_struct(proc->pid, arg, &arg, size, &err)) {
+				if (get_struct(proc->pid, arg.llu, &arg, size, &err)) {
 					tprintf(proc, "%s", err);
 					goto next;
 				}
 				tprintf(proc, "&");
 			}
-			value = arg;
+			if (ells == 1)
+				value = (unsigned long int)arg.lu;
+			else if (ells > 1)
+				value = arg.llu;
+			else if (ells == -1)
+				value = (unsigned short int)arg.hu;
+			else if (ells < -1)
+				value = (unsigned char)arg.hhu;
+			else
+				value = (unsigned int)arg.u;
 			if (size < sizeof(long long int))
 				value &= (1ULL << (8 * size)) - 1;
 			if (*fmt == 'u')

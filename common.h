@@ -18,6 +18,11 @@
 # error "This program is only implemented for Linux"
 #endif
 
+/* #define signals that may appear in list-signums.h but may be missing in <signalh> */
+#if !defined(SIGCLD) && defined(SIGCHLD)
+# define SIGCLD SIGCHLD
+#endif
+
 #include "arg.h"
 #include "list-errnos.h"
 #include "list-signums.h"

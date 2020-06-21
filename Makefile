@@ -19,6 +19,8 @@ HDR =\
 	list-errnos.h\
 	list-signums.h
 
+S = [ 	]
+
 all: sctrace
 $(OBJ): $(@:.o=.c) $(HDR)
 
@@ -31,13 +33,13 @@ sctrace: $(OBJ)
 list-errnos.h:
 	printf '#define LIST_ERRNOS(_)\\\n\t' > $@
 	cat $(ERRNO_HDRS) | sed 's/\/\/.*$$//' | tr -d '$$' | sed 's/\*\//\$$/g' | sed 's/\/\*[^$$]*\$$//g' \
-		| sed -n '/^[ \t]*#[ \t]*define[ \t].*[ \t][0-9]*[ \t]*$$/s/^[ \t#]*define[ \t]*\([^ \t]*\).*$$/_(\1)/p' \
+		| sed -n '/^$S*#$S*define$S.*$S[0-9]*$S*$$/s/^[ 	#]*define$S*\([^ 	]*\).*$$/_(\1)/p' \
 		| sort | uniq | tr '\n' '#' | sed 's/#_/\\\n\t_/g' | tr '#' '\n' >> $@
 
 list-signums.h:
-	printf '#define LIST_SIGNUMS(_)\\\n\t' > $@
+	printf '#define LIST_SIGNUMS(_)\\\n	' > $@
 	cat $(SIGNUM_HDRS) | sed 's/\/\/.*$$//' | tr -d '$$' | sed 's/\*\//\$$/g' | sed 's/\/\*[^$$]*\$$//g' \
-		| sed -n '/^[ \t]*#[ \t]*define[ \t][^_]*[ \t][0-9]*[ \t]*$$/s/^[ \t#]*define[ \t]*\([^ \t]*\).*$$/_(\1)/p' \
+		| sed -n '/^$S*#$S*define$S[^_]*$S[0-9]*$S*$$/s/^[ 	#]*define$S*\([^ 	]*\).*$$/_(\1)/p' \
 		| sort | uniq | tr '\n' '#' | sed 's/#_/\\\n\t_/g' | tr '#' '\n' >> $@
 
 install: sctrace

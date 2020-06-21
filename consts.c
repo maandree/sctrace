@@ -40,17 +40,17 @@ get_signum_name(int sig)
 	LIST_SIGNUMS(X)
 #undef X
 
-	if (__SIGRTMIN <= sig && sig <= __SIGRTMAX) {
-		above_low = sig - __SIGRTMIN;
-		below_high = __SIGRTMAX - sig;
+	if (SIGRTMIN <= sig && sig <= SIGRTMAX) {
+		above_low = sig - SIGRTMIN;
+		below_high = SIGRTMAX - sig;
 		if (!above_low)
-			return "__SIGRTMIN";
+			return "SIGRTMIN";
 		if (!below_high)
-			return "__SIGRTMAX";
+			return "SIGRTMAX";
 		if (above_low <= below_high)
-			sprintf(buf, "__SIGRTMIN+%i", above_low);
+			sprintf(buf, "SIGRTMIN+%i", above_low);
 		else
-			sprintf(buf, "__SIGRTMAX-%i", below_high);
+			sprintf(buf, "SIGRTMAX-%i", below_high);
 		return buf;
 	}
 

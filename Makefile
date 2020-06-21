@@ -30,7 +30,7 @@ sctrace: $(OBJ)
 
 list-errnos.h:
 	printf '#define LIST_ERRNOS(_)\\\n\t' > $@
-	cat $(ERRNO_HDRS) sed 's/\/\/.*$$//' | tr -d '$$' | sed 's/\*\//\$$/g' | sed 's/\/\*[^$$]*\$$//g' \
+	cat $(ERRNO_HDRS) | sed 's/\/\/.*$$//' | tr -d '$$' | sed 's/\*\//\$$/g' | sed 's/\/\*[^$$]*\$$//g' \
 		| sed -n '/^[ \t]*#[ \t]*define[ \t].*[ \t][0-9]*[ \t]*$$/s/^[ \t#]*define[ \t]*\([^ \t]*\).*$$/_(\1)/p' \
 		| sort | uniq | tr '\n' '#' | sed 's/#_/\\\n\t_/g' | tr '#' '\n' >> $@
 

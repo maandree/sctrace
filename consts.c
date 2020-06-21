@@ -2,6 +2,19 @@
 #include "common.h"
 
 
+#ifndef __SIGRTMIN
+# ifdef __linux__
+#  define __SIGRTMIN 32
+# endif
+#endif
+
+#ifndef __SIGRTMAX
+# ifdef __linux__
+#  define __SIGRTMAX (_NSIG - 1)
+# endif
+#endif
+
+
 const char *
 get_errno_name(int err)
 {
@@ -40,17 +53,17 @@ get_signum_name(int sig)
 	LIST_SIGNUMS(X)
 #undef X
 
-	if (SIGRTMIN <= sig && sig <= SIGRTMAX) {
-		above_low = sig - SIGRTMIN;
-		below_high = SIGRTMAX - sig;
+	if (__SIGRTMIN <= sig && sig <= __SIGRTMAX) {
+		above_low = sig - __SIGRTMIN;
+		below_high = __SIGRTMAX - sig;
 		if (!above_low)
-			return "SIGRTMIN";
+			return "__SIGRTMIN";
 		if (!below_high)
-			return "SIGRTMAX";
+			return "__SIGRTMAX";
 		if (above_low <= below_high)
-			sprintf(buf, "SIGRTMIN+%i", above_low);
+			sprintf(buf, "__SIGRTMIN+%i", above_low);
 		else
-			sprintf(buf, "SIGRTMAX-%i", below_high);
+			sprintf(buf, "__SIGRTMAX-%i", below_high);
 		return buf;
 	}
 

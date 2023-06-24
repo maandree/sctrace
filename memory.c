@@ -26,7 +26,7 @@ get_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp)
 			*errorp = errno == EFAULT ? "<invalid address>" : "<an error occured during reading of string>";
 			*lenp = 0;
 			free(out);
-			return 0;
+			return NULL;
 		}
 		p = memchr(&out[off], 0, read_size);
 		if (p) {

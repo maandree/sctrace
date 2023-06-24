@@ -2,6 +2,8 @@
 #include "common.h"
 
 #include <linux/memfd.h>
+#include <linux/mman.h>
+#include <sys/sysmacros.h>
 #include <sys/epoll.h>
 #include <sys/inotify.h>
 #include <sys/mman.h>
@@ -42,6 +44,13 @@
 				p = stpcpy(p, "|"#FLAG);\
 				flags ^= (FLAG);\
 			}\
+		} while (0)
+
+#define FLAG_DEFAULT(FLAG)\
+		do {\
+			_Static_assert((FLAG) == 0, #FLAG" is not 0 and cannot be the default");\
+			if (!flags && !*buf)\
+				p = stpcpy(p, "|"#FLAG);\
 		} while (0)
 
 #define FLAGS_END\
@@ -92,6 +101,7 @@ print_faccessat_flags(struct process *proc, size_t arg_index)
 static void
 print_clockid(struct process *proc, size_t arg_index)
 {
+	long int i;
 	CASE(CLOCK_REALTIME);
 	CASE(CLOCK_MONOTONIC);
 	CASE(CLOCK_PROCESS_CPUTIME_ID);
@@ -103,7 +113,17 @@ print_clockid(struct process *proc, size_t arg_index)
 	CASE(CLOCK_REALTIME_ALARM);
 	CASE(CLOCK_BOOTTIME_ALARM);
 	CASE(CLOCK_TAI);
-	tprintf(proc, "%li", (long int)proc->args[arg_index]);
+	i = (long int)proc->args[arg_index];
+	if (i >= 0)
+		tprintf(proc, "%li", i);
+	else if ((i & 7) == 2)
+		tprintf(proc, "%li (pid: %li)", i, ~i / 8);
+	else if ((i & 7) == 3)
+		tprintf(proc, "%li (fd: %li)", i, ~i / 8);
+	else if ((i & 7) == 6)
+		tprintf(proc, "%li (tid: %li)", i, ~i / 8);
+	else
+		tprintf(proc, "%li (~%li*8 + %li)", i, ~i / 8, i & 7);
 }
 
 static void
@@ -124,6 +144,42 @@ print_timespec(struct process *proc, size_t arg_index)
 		return;
 	}
 	tprintf(proc, "{.tv_sec = %ji, .tv_nsec = %li}", (intmax_t)ts.tv_sec, ts.tv_nsec);
+}
+
+static void
+print_stat(struct process *proc, size_t arg_index)
+{
+	struct stat st;
+	const char *err, *type = NULL;
+	unsigned int maj, min;
+	if (get_struct(proc->pid, proc->args[arg_index], &st, sizeof(st), &err)) {
+		tprintf(proc, "%s", err);
+		return;
+	}
+	maj = major(st.st_rdev);
+	min = minor(st.st_rdev);
+	tprintf(proc, "{.st_dev = %ju, .st_ino = %ju,",
+	        (uintmax_t)st.st_dev, (uintmax_t)st.st_ino);
+	if      ((st.st_mode & S_IFMT) == S_IFBLK) type = "S_IFBLK|";
+	else if ((st.st_mode & S_IFMT) == S_IFCHR) type = "S_IFCHR|";
+	else if ((st.st_mode & S_IFMT) == S_IFIFO) type = "S_IFIFO|";
+	else if ((st.st_mode & S_IFMT) == S_IFREG) type = "S_IFREG|";
+	else if ((st.st_mode & S_IFMT) == S_IFDIR) type = "S_IFDIR|";
+	else if ((st.st_mode & S_IFMT) == S_IFLNK) type = "S_IFLNK|";
+	else if ((st.st_mode & S_IFMT) == S_IFSOCK) type = "S_IFSOCK|";
+	tprintf(proc, " .st_mode = %s%#jo, .st_nlink = %#jo, .st_uid = %ju, .st_gid = %ju, .st_rdev = %#jx",
+	        type ? type : "", (uintmax_t)(st.st_mode & ~(type ? S_IFMT : 0)), (uintmax_t)st.st_nlink,
+		(uintmax_t)st.st_uid, (uintmax_t)st.st_gid, (uintmax_t)st.st_rdev);
+	if (makedev(maj, min) == st.st_rdev)
+		tprintf(proc, " (%u:%u)", maj, min);
+	tprintf(proc, ", .st_size = %ji, .st_blksize = %ji, .st_blocks = %ji,"
+	              " .st_atim = {.tv_sec = %ji, .tv_nsec = %li},"
+	              " .st_mtim = {.tv_sec = %ji, .tv_nsec = %li},"
+	              " .st_ctim = {.tv_sec = %ji, .tv_nsec = %li}}",
+	        (intmax_t)st.st_size, (intmax_t)st.st_blksize, (intmax_t)st.st_blocks,
+	        (intmax_t)st.st_atim.tv_sec, st.st_atim.tv_nsec,
+	        (intmax_t)st.st_mtim.tv_sec, st.st_mtim.tv_nsec,
+	        (intmax_t)st.st_ctim.tv_sec, st.st_ctim.tv_nsec);
 }
 
 static void
@@ -379,6 +435,83 @@ print_memfd_create_flags(struct process *proc, size_t arg_index)
 		huge >>= MFD_HUGE_SHIFT;
 		sprintf(p, "|MFD_HUGE_%i%c%s", 1 << ((int)huge % 10), "BKMGTPE"[huge / 10], huge >= 10 ? "B" : "");
 	}
+	FLAGS_END;
+}
+
+static void
+print_newfstatat_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(AT_EMPTY_PATH);
+	FLAG(AT_NO_AUTOMOUNT);
+	FLAG(AT_SYMLINK_NOFOLLOW);
+	FLAGS_END;
+}
+
+static void
+print_madvice_flag(struct process *proc, size_t arg_index)
+{
+	CASE(MADV_NORMAL);
+	CASE(MADV_RANDOM);
+	CASE(MADV_SEQUENTIAL);
+	CASE(MADV_WILLNEED);
+	CASE(MADV_DONTNEED);
+	CASE(MADV_FREE);
+	CASE(MADV_REMOVE);
+	CASE(MADV_DONTFORK);
+	CASE(MADV_DOFORK);
+	CASE(MADV_MERGEABLE);
+	CASE(MADV_UNMERGEABLE);
+	CASE(MADV_HUGEPAGE);
+	CASE(MADV_NOHUGEPAGE);
+	CASE(MADV_DONTDUMP);
+	CASE(MADV_DODUMP);
+	CASE(MADV_WIPEONFORK);
+	CASE(MADV_KEEPONFORK);
+	CASE(MADV_COLD);
+	CASE(MADV_PAGEOUT);
+	CASE(MADV_POPULATE_READ);
+	CASE(MADV_POPULATE_WRITE);
+	CASE(MADV_DONTNEED_LOCKED);
+	CASE(MADV_COLLAPSE);
+	CASE(MADV_HWPOISON);
+	CASE(MADV_SOFT_OFFLINE);
+	tprintf(proc, "%i", (int)proc->args[arg_index]);
+}
+
+static void
+print_mprotect_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(PROT_READ);
+	FLAG(PROT_WRITE);
+	FLAG(PROT_EXEC);
+	FLAG(PROT_SEM);
+#ifdef PROT_SAO
+	FLAG(PROT_SAO);
+#endif
+	FLAG_DEFAULT(PROT_NONE);
+	FLAG(PROT_GROWSUP);
+	FLAG(PROT_GROWSDOWN);
+	FLAGS_END;
+}
+
+static void
+print_msync_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(MS_ASYNC);
+	FLAG(MS_SYNC);
+	FLAG(MS_INVALIDATE);
+	FLAGS_END;
+}
+
+static void
+print_pkey_access_rights(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(PKEY_DISABLE_ACCESS);
+	FLAG(PKEY_DISABLE_WRITE);
 	FLAGS_END;
 }
 
@@ -655,7 +788,7 @@ print_systemcall(struct process *proc)
 	UNDOCUMENTED(fsmount);
 	UNDOCUMENTED(fsopen);
 	UNDOCUMENTED(fspick);
-	SIMPLE(fstat, "ip", Int); /* TODO output */
+	FORMATTERS(fstat, "i>1", Int, print_stat);
 	SIMPLE(fstatfs, "ip", Int); /* TODO output */
 	SIMPLE(fsync, "i", Int);
 	SIMPLE(ftruncate, "illi", Int);
@@ -728,10 +861,10 @@ print_systemcall(struct process *proc)
 	SIMPLE(lremovexattr, "ss", Int);
 	FORMATTERS(lseek, "illi1", LLong, print_lseek_flag);
 	FORMATTERS(lsetxattr, "ssmlu1", Int, print_setxattr_flags);
-	SIMPLE(lstat, "sp", Int); /* TODO output */
-	SIMPLE(madvise, "plui", Int); /* TODO flags */
+	FORMATTERS(lstat, "s>1", Int, print_stat);
+	FORMATTERS(madvise, "plu1", Int, print_madvice_flag);
 	GENERIC_HANDLER(mbind);
-	SIMPLE(membarrier, "ii", Int); /* TODO flags */
+	SIMPLE(membarrier, "iii", Int); /* TODO flags */
 	FORMATTERS(memfd_create, "s1", Int, print_memfd_create_flags);
 	GENERIC_HANDLER(migrate_pages);
 	GENERIC_HANDLER(mincore);
@@ -747,7 +880,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(mount);
 	UNDOCUMENTED(move_mount);
 	GENERIC_HANDLER(move_pages);
-	SIMPLE(mprotect, "plui", Int); /* TODO flags */
+	FORMATTERS(mprotect, "plu1", Int, print_mprotect_flags);
 	GENERIC_HANDLER(mq_getsetattr);
 	GENERIC_HANDLER(mq_notify);
 	GENERIC_HANDLER(mq_open);
@@ -759,13 +892,13 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(msgget);
 	GENERIC_HANDLER(msgrcv);
 	GENERIC_HANDLER(msgsnd);
-	SIMPLE(msync, "plui", Int); /* TODO flags */
+	FORMATTERS(msync, "plu1", Int, print_msync_flags);
 	SIMPLE(munlock, "plu", Int);
 	SIMPLE(munlockall, "", Int);
 	SIMPLE(munmap, "plu", Int);
 	GENERIC_HANDLER(name_to_handle_at);
 	FORMATTERS(nanosleep, "1>1", Int, print_timespec);
-	SIMPLE(newfstatat, "Fspi", Int); /* TODO output, flags */
+	FORMATTERS(newfstatat, "Fs>12", Int, print_stat, print_newfstatat_flags);
 	SIMPLE(nfsservctl, "ipp", Long); /* TODO flags, struct, output */
 	GENERIC_HANDLER(open);
 	GENERIC_HANDLER(open_by_handle_at);
@@ -779,9 +912,9 @@ print_systemcall(struct process *proc)
 	FORMATTERS(pipe, ">1", Int, print_int_pair);
 	FORMATTERS(pipe2, ">12", Int, print_int_pair, print_pipe2_flags);
 	SIMPLE(pivot_root, "ss", Int);
-	SIMPLE(pkey_alloc, "lulu", Int); /* TODO flags */
+	FORMATTERS(pkey_alloc, "x1", Int, print_pkey_access_rights);
 	SIMPLE(pkey_free, "i", Int);
-	SIMPLE(pkey_mprotect, "pluii", Int); /* TODO flags */
+	FORMATTERS(pkey_mprotect, "plu1i", Int, print_mprotect_flags);
 	GENERIC_HANDLER(poll);
 	GENERIC_HANDLER(ppoll);
 	GENERIC_HANDLER(prctl);
@@ -883,7 +1016,7 @@ print_systemcall(struct process *proc)
 	SIMPLE(socket, "iii", Int); /* TODO flags */
 	FORMATTERS(socketpair, "iii>1", Int, print_int_pair); /* TODO flags */
 	FORMATTERS(splice, "i&llii&llilu1", Long, print_splice_flags);
-	GENERIC_HANDLER(stat);
+	FORMATTERS(stat, "s>1", Int, print_stat);
 	GENERIC_HANDLER(statfs);
 	GENERIC_HANDLER(statx);
 	SIMPLE(swapoff, "s", Int);

@@ -22,7 +22,7 @@ handle_syscall(struct process *proc)
 	switch ((int)proc->state) {
 	default:
 		/* Get system call arguments */
-		if (ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs))
+		if (ptrace(PTRACE_GETREGS, proc->pid, REGARGS(NULL, &regs)))
 			eprintf("ptrace PTRACE_GETREGS %ju NULL <buffer>:", (uintmax_t)proc->pid);
 		proc->scall = regs.SYSCALL_NUM_REG;
 #ifdef CHECK_ARCHITECTURE
@@ -45,7 +45,7 @@ handle_syscall(struct process *proc)
 	case CloneParent:
 	case ForkParent:
 		/* Get system call result */
-		if (ptrace(PTRACE_GETREGS, proc->pid, NULL, &regs))
+		if (ptrace(PTRACE_GETREGS, proc->pid, REGARGS(NULL, &regs)))
 			eprintf("ptrace PTRACE_GETREGS %ju NULL <buffer>:", (uintmax_t)proc->pid);
 
 		/* Get or set return */
@@ -53,7 +53,7 @@ handle_syscall(struct process *proc)
 			proc->ret = regs.SYSCALL_RET_REG;
 		} else {
 			regs.SYSCALL_RET_REG = proc->ret;
-			if (ptrace(PTRACE_SETREGS, proc->pid, NULL, &regs))
+			if (ptrace(PTRACE_SETREGS, proc->pid, REGARGS(NULL, &regs)))
 				eprintf("ptrace PTRACE_SETREGS %ju NULL <buffer>:", (uintmax_t)proc->pid);
 			if (ptrace(PTRACE_SYSCALL, proc->pid, NULL, 0))
 				eprintf("ptrace PTRACE_SYSCALL %ju NULL 0:", (uintmax_t)proc->pid);

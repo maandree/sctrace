@@ -30,3 +30,9 @@
 #else
 # error "This program is only implemented for x86-64 on Linux"
 #endif
+
+#if defined(__sparc__)
+# define REGARGS(a, b) b, a
+#else
+# define REGARGS(a, b) a, b
+#endif

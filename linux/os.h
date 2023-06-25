@@ -36,3 +36,14 @@
 #else
 # define REGARGS(a, b) a, b
 #endif
+
+
+#ifndef KEY_SPEC_THREAD_KEYRING
+# define KEY_SPEC_THREAD_KEYRING         -1
+# define KEY_SPEC_PROCESS_KEYRING        -2
+# define KEY_SPEC_SESSION_KEYRING        -3
+# define KEY_SPEC_USER_KEYRING           -4
+# define KEY_SPEC_USER_SESSION_KEYRING   -5
+# define KEY_SPEC_GROUP_KEYRING          -6
+# define KEY_SPEC_REQKEY_AUTH_KEY        -7
+#endif

@@ -4,15 +4,19 @@
 #include <linux/close_range.h>
 #include <linux/memfd.h>
 #include <linux/mman.h>
+#include <netinet/in.h>
 #include <sys/sysmacros.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/file.h>
 #include <sys/inotify.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <linux/fs.h> /* after <sys/mount.h> */
 #include <sys/random.h>
 #include <sys/socket.h>
+#include <sys/timex.h>
+#include <sys/un.h>
 #include <sys/xattr.h>
 #include <fcntl.h>
 #include <sched.h>
@@ -578,6 +582,305 @@ print_memfd_secret_flags(struct process *proc, size_t arg_index)
 	FLAGS_END;
 }
 
+static void
+print_setns_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(CLONE_NEWCGROUP);
+	FLAG(CLONE_NEWIPC);
+	FLAG(CLONE_NEWNET);
+	FLAG(CLONE_NEWNS);
+	FLAG(CLONE_NEWPID);
+	FLAG(CLONE_NEWTIME);
+	FLAG(CLONE_NEWUSER);
+	FLAG(CLONE_NEWUTS);
+	FLAGS_END;
+}
+
+static void
+print_flock_flag(struct process *proc, size_t arg_index)
+{
+	CASE(LOCK_SH);
+	CASE(LOCK_EX);
+	CASE(LOCK_UN);
+	tprintf(proc, "%i", (int)proc->args[arg_index]);
+}
+
+static void
+print_fadvise64_flag(struct process *proc, size_t arg_index)
+{
+	CASE(POSIX_FADV_NORMAL);
+	CASE(POSIX_FADV_SEQUENTIAL);
+	CASE(POSIX_FADV_RANDOM);
+	CASE(POSIX_FADV_NOREUSE);
+	CASE(POSIX_FADV_WILLNEED);
+	CASE(POSIX_FADV_DONTNEED);
+	tprintf(proc, "%i", (int)proc->args[arg_index]);
+}
+
+static void
+print_fallocate_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(FALLOC_FL_KEEP_SIZE);
+	FLAG(FALLOC_FL_PUNCH_HOLE);
+	FLAG(FALLOC_FL_NO_HIDE_STALE);
+	FLAG(FALLOC_FL_COLLAPSE_RANGE);
+	FLAG(FALLOC_FL_ZERO_RANGE);
+	FLAG(FALLOC_FL_INSERT_RANGE);
+	FLAG(FALLOC_FL_UNSHARE_RANGE);
+	FLAGS_END;
+}
+
+static void
+print_timex(struct process *proc, size_t arg_index)
+{
+	struct timex tx;
+	const char *err;
+	if (get_struct(proc->pid, proc->args[arg_index], &tx, sizeof(tx), &err)) {
+		tprintf(proc, "%s", err);
+		return;
+	}
+
+	tprintf(proc, "{.mode = ");
+	if (tx.modes == ADJ_OFFSET_SINGLESHOT) {
+		tprintf(proc, "ADJ_OFFSET_SINGLESHOT");
+	} else if (tx.modes == ADJ_OFFSET_SS_READ) {
+		tprintf(proc, "ADJ_OFFSET_SS_READ");
+	} else {
+		FLAGS_BEGIN_VALUE(tx.modes);
+		FLAG(ADJ_OFFSET);
+		FLAG(ADJ_FREQUENCY);
+		FLAG(ADJ_MAXERROR);
+		FLAG(ADJ_ESTERROR);
+		FLAG(ADJ_STATUS);
+		FLAG(ADJ_TIMECONST);
+		FLAG(ADJ_SETOFFSET);
+		FLAG(ADJ_MICRO);
+		FLAG(ADJ_NANO);
+		FLAG(ADJ_TAI);
+		FLAG(ADJ_TICK);
+		FLAGS_END;
+	}
+
+	tprintf(proc, ", .offset = %li, .freq = %li, .maxerror = %li, .esterror = %li, .status = ",
+	        tx.offset, tx.freq, tx.maxerror, tx.esterror);
+
+	FLAGS_BEGIN_VALUE(tx.status);
+	FLAG(STA_PLL);
+	FLAG(STA_PPSFREQ);
+	FLAG(STA_PPSTIME);
+	FLAG(STA_FLL);
+	FLAG(STA_INS);
+	FLAG(STA_DEL);
+	FLAG(STA_UNSYNC);
+	FLAG(STA_FREQHOLD);
+	FLAG(STA_PPSSIGNAL);
+	FLAG(STA_PPSJITTER);
+	FLAG(STA_PPSWANDER);
+	FLAG(STA_PPSERROR);
+	FLAG(STA_CLOCKERR);
+	FLAG(STA_NANO);
+	FLAG(STA_MODE);
+	FLAG(STA_CLK);
+	FLAGS_END;
+
+	tprintf(proc, ", .constant = %li, .precision = %li, .tolerance = %li"
+	              ", .time = {.tv_sec = %ji, .tv_usec = %li}"
+	              ", .tick = %li, .ppsfreq = %li, .jitter = %li, .shift = %i, .stabil = %li"
+	              ", .jitcnt = %li, .calcnt = %li, .errcnt = %li, .stbcnt = %li, .tai = %i}",
+	        tx.constant, tx.precision, tx.tolerance,
+	        (intmax_t)tx.time.tv_sec, tx.time.tv_usec,
+	        tx.tick, tx.ppsfreq, tx.jitter, tx.shift, tx.stabil,
+	        tx.jitcnt, tx.calcnt, tx.errcnt, tx.stbcnt, tx.tai);
+}
+
+static void
+print_key_serial(struct process *proc, size_t arg_index)
+{
+	CASE(KEY_SPEC_THREAD_KEYRING);
+	CASE(KEY_SPEC_PROCESS_KEYRING);
+	CASE(KEY_SPEC_SESSION_KEYRING);
+	CASE(KEY_SPEC_USER_KEYRING);
+	CASE(KEY_SPEC_USER_SESSION_KEYRING);
+	tprintf(proc, "%i", (int)proc->args[arg_index]);
+}
+
+
+static void
+print_sockaddr(struct process *proc, const struct sockaddr *addr, socklen_t len)
+{
+	const struct sockaddr_un *sun;
+	const struct sockaddr_in *sin;
+	const struct sockaddr_in6 *sin6;
+	size_t slen;
+	char *str;
+	const char *af_name;
+
+	if ((size_t)len < sizeof(addr->sa_family)) {
+		tprintf(proc, "<structure truncated>");
+		return;
+	}
+
+	switch (addr->sa_family) {
+	case AF_INET:
+		sin = (const struct sockaddr_in *)addr;
+		tprintf(proc, "{.sin_family = AF_INET, ");
+		if ((size_t)len < offsetof(struct sockaddr_in, sin_port) + sizeof(sin->sin_port))
+			goto truncated;
+		tprintf(proc, ".sin_port = htons(%u), ", ntohs(sin->sin_port));
+		if ((size_t)len < offsetof(struct sockaddr_in, sin_addr) + sizeof(sin->sin_addr))
+			goto truncated;
+		tprintf(proc, ".sin_addr.s_addr = htonl(%u)}", ntohl(sin->sin_addr.s_addr));
+		return;
+
+	case AF_INET6:
+		sin6 = (const struct sockaddr_in6 *)addr;
+		tprintf(proc, "{.sin6_family = AF_INET6, ");
+		if ((size_t)len < offsetof(struct sockaddr_in6, sin6_port) + sizeof(sin6->sin6_port))
+			goto truncated;
+		tprintf(proc, ".sin6_port = htons(%u), ", ntohs(sin6->sin6_port));
+		if ((size_t)len < offsetof(struct sockaddr_in6, sin6_flowinfo) + sizeof(sin6->sin6_flowinfo))
+			goto truncated;
+		tprintf(proc, ".sin6_flowinfo = htonl(%u), ", ntohs(sin6->sin6_flowinfo));
+		if ((size_t)len < offsetof(struct sockaddr_in6, sin6_addr) + sizeof(sin6->sin6_addr))
+			goto truncated;
+		tprintf(proc, ".sin6_sin6_addr.s6_addr = {%#02x, %#02x, %#02x, %#02x, %#02x, %#02x, %#02x, %#02x,"
+		                                        " %#02x, %#02x, %#02x, %#02x, %#02x, %#02x, %#02x, %#02x}, ",
+		        sin6->sin6_addr.s6_addr[0], sin6->sin6_addr.s6_addr[1],
+		        sin6->sin6_addr.s6_addr[2], sin6->sin6_addr.s6_addr[3],
+		        sin6->sin6_addr.s6_addr[4], sin6->sin6_addr.s6_addr[5],
+		        sin6->sin6_addr.s6_addr[6], sin6->sin6_addr.s6_addr[7],
+		        sin6->sin6_addr.s6_addr[8], sin6->sin6_addr.s6_addr[9],
+		        sin6->sin6_addr.s6_addr[10], sin6->sin6_addr.s6_addr[11],
+		        sin6->sin6_addr.s6_addr[12], sin6->sin6_addr.s6_addr[13],
+		        sin6->sin6_addr.s6_addr[14], sin6->sin6_addr.s6_addr[15]);
+		if ((size_t)len < offsetof(struct sockaddr_in6, sin6_scope_id) + sizeof(sin6->sin6_scope_id))
+			goto truncated;
+		tprintf(proc, ".sin6_scope_id = htonl(%u)}", ntohs(sin6->sin6_scope_id));
+		return;
+
+	case AF_UNIX:
+		sun = (const struct sockaddr_un *)addr;
+		slen = (size_t)len - offsetof(struct sockaddr_un, sun_path);
+		if (!slen || !sun->sun_path[0] || !memchr(sun->sun_path, 0, slen))
+			str = escape_memory(sun->sun_path, slen);
+		else
+			str = escape_memory(sun->sun_path, strlen(sun->sun_path));
+		tprintf(proc, "{.sun_family = AF_UNIX, .sun_path = %s}", str);
+		free(str);
+		return;
+
+	default:
+		/* TODO add support for more address families */
+#define AF_NAME(NAME) case NAME: af_name = #NAME; break;
+		switch (addr->sa_family) {
+		AF_NAME(AF_UNSPEC);
+		AF_NAME(AF_AX25);
+		AF_NAME(AF_IPX);
+		AF_NAME(AF_APPLETALK);
+		AF_NAME(AF_NETROM);
+		AF_NAME(AF_BRIDGE);
+		AF_NAME(AF_ATMPVC);
+		AF_NAME(AF_X25);
+		AF_NAME(AF_ROSE);
+		AF_NAME(AF_DECnet);
+		AF_NAME(AF_NETBEUI);
+		AF_NAME(AF_SECURITY);
+		AF_NAME(AF_KEY);
+		AF_NAME(AF_NETLINK);
+		AF_NAME(AF_PACKET);
+		AF_NAME(AF_ASH);
+		AF_NAME(AF_ECONET);
+		AF_NAME(AF_ATMSVC);
+		AF_NAME(AF_RDS);
+		AF_NAME(AF_SNA);
+		AF_NAME(AF_IRDA);
+		AF_NAME(AF_PPPOX);
+		AF_NAME(AF_WANPIPE);
+		AF_NAME(AF_LLC);
+		AF_NAME(AF_IB);
+		AF_NAME(AF_MPLS);
+		AF_NAME(AF_CAN);
+		AF_NAME(AF_TIPC);
+		AF_NAME(AF_BLUETOOTH);
+		AF_NAME(AF_IUCV);
+		AF_NAME(AF_RXRPC);
+		AF_NAME(AF_ISDN);
+		AF_NAME(AF_PHONET);
+		AF_NAME(AF_IEEE802154);
+		AF_NAME(AF_CAIF);
+		AF_NAME(AF_ALG);
+		AF_NAME(AF_NFC);
+		AF_NAME(AF_VSOCK);
+		AF_NAME(AF_KCM);
+		AF_NAME(AF_QIPCRTR);
+		AF_NAME(AF_SMC);
+		AF_NAME(AF_XDP);
+		AF_NAME(AF_MCTP);
+		default:
+			af_name = NULL;
+			break;
+		}
+#undef AF_NAME
+		slen = (size_t)len - offsetof(struct sockaddr, sa_data);
+		str = escape_memory(addr->sa_data, slen);
+		if (af_name)
+			tprintf(proc, "{.sa_family = %s, .sa_data = %s}", af_name, str);
+		else
+			tprintf(proc, "{.sa_family = %u, .sa_data = %s}", addr->sa_family, str);
+		free(str);
+		return;
+	}
+
+truncated:
+	tprintf(proc, "<structure truncated>}");
+	return;
+}
+
+
+static void
+print_const_sockaddr(struct process *proc, size_t arg_index)
+{
+	socklen_t len = (socklen_t)proc->args[arg_index + 1];
+	void *mem;
+	const char *err;
+	len = len > 0 ? len : 0;
+	mem = get_memory(proc->pid, (unsigned long int)proc->args[arg_index], (size_t)len, &err);
+	if (!mem) {
+		tprintf(proc, "%s", err);
+		return;
+	}
+	print_sockaddr(proc, mem, len);
+	free(mem);
+}
+
+
+static void
+print_nonconst_sockaddr(struct process *proc, size_t arg_index)
+{
+	socklen_t *lenp = (socklen_t *)proc->args[arg_index + 1];
+	socklen_t len = (*lenp && *lenp > 0) ? *lenp : 0;
+	socklen_t saved_len;
+	void *mem;
+	const char *err;
+	if (proc->state == Syscall) {
+		/* on return */
+		saved_len = (socklen_t)proc->save[arg_index + 1];
+		len = len < saved_len ? len : saved_len;
+	} else {
+		/* on enter */
+		proc->save[arg_index + 1] = (unsigned long long int)len;
+	}
+	mem = get_memory(proc->pid, (unsigned long int)proc->args[arg_index], (size_t)len, &err);
+	if (!mem) {
+		tprintf(proc, "%s", err);
+		return;
+	}
+	print_sockaddr(proc, mem, len);
+	free(mem);
+}
+
 
 static void
 printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
@@ -785,12 +1088,12 @@ print_systemcall(struct process *proc)
 	FORMATTERS(accept4, "ipp1", Int, print_accept4_flags); /* TODO output */
 	FORMATTERS(access, "s1", Int, print_access_flags);
 	SIMPLE(acct, "s", Int);
-	GENERIC_HANDLER(add_key);
-	GENERIC_HANDLER(adjtimex);
+	FORMATTERS(add_key, "ssmlu1", Int, print_key_serial);
+	FORMATTERS(adjtimex, "1", Int, print_timex); /* TODO return */
 	UNIMPLEMENTED(afs_syscall);
 	SIMPLE(alarm, "u", UInt);
 	GENERIC_HANDLER(arch_prctl);
-	GENERIC_HANDLER(bind);
+	FORMATTERS(bind, "i1u", Int, print_const_sockaddr);
 	GENERIC_HANDLER(bpf);
 	SIMPLE(brk, "p", Int);
 	GENERIC_HANDLER(capget);
@@ -799,7 +1102,7 @@ print_systemcall(struct process *proc)
 	SIMPLE(chmod, "so", Int);
 	SIMPLE(chown, "sii", Int);
 	SIMPLE(chroot, "s", Int);
-	UNDOCUMENTED(clock_adjtime);
+	FORMATTERS(clock_adjtime, "1&2", Int, print_clockid, print_timex); /* TODO return */
 	FORMATTERS(clock_getres, "1>2", Int, print_clockid, print_timespec);
 	FORMATTERS(clock_gettime, "1>2", Int, print_clockid, print_timespec);
 	FORMATTERS(clock_nanosleep, "123>3", Int, print_clockid, print_clock_nanosleep_flags, print_timespec);
@@ -808,7 +1111,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(clone3);
 	SIMPLE(close, "i", Int);
 	FORMATTERS(close_range, "uu1", Int, print_close_range_flags);
-	GENERIC_HANDLER(connect);
+	FORMATTERS(connect, "i1u", Int, print_const_sockaddr);
 	SIMPLE(copy_file_range, "i&llii&llilux", Long);
 	SIMPLE(creat, "so", Int);
 	SIMPLE(create_module, "slu", Ptr);
@@ -832,8 +1135,8 @@ print_systemcall(struct process *proc)
 	SIMPLE(exit_group, "i", Int);
 	FORMATTERS(faccessat, "Fs1", Int, print_access_flags);
 	FORMATTERS(faccessat2, "Fs12", Int, print_access_flags, print_faccessat2_flags);
-	GENERIC_HANDLER(fadvise64);
-	GENERIC_HANDLER(fallocate);
+	FORMATTERS(fadvise64, "ilili1", Int, print_fadvise64_flag);
+	FORMATTERS(fallocate, "i1lili", Int, print_fallocate_flags);
 	GENERIC_HANDLER(fanotify_init);
 	GENERIC_HANDLER(fanotify_mark);
 	SIMPLE(fchdir, "i", Int);
@@ -846,7 +1149,7 @@ print_systemcall(struct process *proc)
 	SIMPLE(fgetxattr, "is>mlu", Long);
 	GENERIC_HANDLER(finit_module);
 	GENERIC_HANDLER(flistxattr);
-	GENERIC_HANDLER(flock);
+	FORMATTERS(flock, "i1", Int, print_flock_flag);
 	SIMPLE(fork, "", Int);
 	SIMPLE(fremovexattr, "is", Int);
 	UNDOCUMENTED(fsconfig);
@@ -874,7 +1177,7 @@ print_systemcall(struct process *proc)
 	SIMPLE(getgid, "", Int);
 	GENERIC_HANDLER(getgroups);
 	GENERIC_HANDLER(getitimer);
-	GENERIC_HANDLER(getpeername);
+	FORMATTERS(getpeername, "i>1&u", Int, print_nonconst_sockaddr);
 	SIMPLE(getpgid, "i", Int);
 	SIMPLE(getpgrp, "", Int);
 	SIMPLE(getpid, "", Int);
@@ -887,7 +1190,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(getrlimit);
 	GENERIC_HANDLER(getrusage);
 	SIMPLE(getsid, "i", Int);
-	GENERIC_HANDLER(getsockname);
+	FORMATTERS(getsockname, "i>1&u", Int, print_nonconst_sockaddr);
 	GENERIC_HANDLER(getsockopt);
 	SIMPLE(gettid, "", Int);
 	GENERIC_HANDLER(gettimeofday);
@@ -1070,7 +1373,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(setgroups);
 	GENERIC_HANDLER(sethostname);
 	GENERIC_HANDLER(setitimer);
-	GENERIC_HANDLER(setns);
+	FORMATTERS(setns, "i1", Int, print_setns_flags);
 	SIMPLE(setpgid, "ii", Int);
 	SIMPLE(setpriority, "iii", Int);
 	SIMPLE(setregid, "ii", Int);
@@ -1107,7 +1410,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(sysfs);
 	GENERIC_HANDLER(sysinfo);
 	GENERIC_HANDLER(syslog);
-	GENERIC_HANDLER(tee);
+	FORMATTERS(tee, "iilu1", Long, print_splice_flags);
 	FORMATTERS(tgkill, "ii1", Int, print_signal_name);
 	SIMPLE(time, ">lli", LLong);
 	GENERIC_HANDLER(timer_create);

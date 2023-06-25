@@ -88,11 +88,11 @@ add_char(char **strp, size_t *sizep, size_t *lenp, char c)
 
 
 static size_t
-utf8len(char *str)
+utf8len(const char *str)
 {
+	const uint8_t *s = (const uint8_t *)str;
 	size_t ext, i, len;
 	uint32_t code;
-	uint8_t *s = (uint8_t *)str;
 
 	struct {
 		uint8_t  lower;
@@ -134,19 +134,20 @@ istrigraphfinal(char c)
 
 
 char *
-escape_memory(char *str, size_t m)
+escape_memory(const char *str, size_t m)
 {
-	char *ret = NULL, *s, *end;
+	char *ret = NULL;
+	const char *s, *end;
 	size_t size = 0;
 	size_t len = 0;
 	size_t n = 0;
 	int need_new_string_hex = 0;
 	int trigraph_state = 0;
 	if (!str) {
-		str = strdup("NULL");
-		if (!str)
+		ret = strdup("NULL");
+		if (!ret)
 			eprintf("strdup:");
-		return str;
+		return ret;
 	}
 	add_char(&ret, &size, &len, '"');
 	for (s = str, end = &str[m]; s != end; s++) {
@@ -209,7 +210,6 @@ escape_memory(char *str, size_t m)
 	}
 	add_char(&ret, &size, &len, '"');
 	add_char(&ret, &size, &len, '\0');
-	free(str);
 	return ret;
 }
 
@@ -217,24 +217,28 @@ escape_memory(char *str, size_t m)
 char *
 get_escaped_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp)
 {
-	char *r;
+	char *r, *ret;
 	if (!addr) {
 		*errorp = "NULL";
 		return NULL;
 	}
 	r = get_string(pid, addr, lenp, errorp);
-	return escape_memory(r, *lenp);
+	ret = escape_memory(r, *lenp);
+	free(r);
+	return ret;
 }
 
 
 char *
 get_escaped_memory(pid_t pid, unsigned long int addr, size_t n, const char **errorp)
 {
-	char *r;
+	char *r, *ret;
 	if (!addr) {
 		*errorp = "NULL";
 		return NULL;
 	}
 	r = get_memory(pid, addr, n, errorp);
-	return escape_memory(r, n);
+	ret = escape_memory(r, n);
+	free(r);
+	return ret;
 }

@@ -94,6 +94,7 @@ struct process {
 	/* Syscall data */
 	unsigned long long int scall;
 	unsigned long long int args[6];
+	unsigned long long int save[6];
 	unsigned long long int ret;
 	enum type ret_type;
 	struct output outputs[6];
@@ -117,7 +118,7 @@ const char *get_signum_name(int sig);
 char *get_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp);
 int get_struct(pid_t pid, unsigned long int addr, void *out, size_t size, const char **errorp);
 char *get_memory(pid_t pid, unsigned long int addr, size_t n, const char **errorp);
-char *escape_memory(char *str, size_t m);
+char *escape_memory(const char *str, size_t m);
 char *get_escaped_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp);
 char *get_escaped_memory(pid_t pid, unsigned long int addr, size_t n, const char **errorp);
 

@@ -30,6 +30,7 @@ handle_syscall(struct process *proc)
 		proc->scall ^= proc->scall_xor;
 #endif
 		GET_SYSCALL_ARGUMENTS(proc, &regs);
+		memset(proc->save, 0, sizeof(proc->save));
 
 		/* Print system call */
 		print_systemcall(proc);

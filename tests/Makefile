@@ -6,6 +6,8 @@ BIN_64 =\
 	exec.64\
 	exit.64\
 	fork.64\
+	fork-many.64\
+	fork-sleep.64\
 	fork-stop.64\
 	kill.64\
 	raise.64\

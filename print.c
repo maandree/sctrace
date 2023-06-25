@@ -764,9 +764,9 @@ print_sockaddr(struct process *proc, const struct sockaddr *addr, socklen_t len)
 		sun = (const struct sockaddr_un *)addr;
 		slen = (size_t)len - offsetof(struct sockaddr_un, sun_path);
 		if (!slen || !sun->sun_path[0] || !memchr(sun->sun_path, 0, slen))
-			str = escape_memory(sun->sun_path, slen);
+			str = escape_string(sun->sun_path, slen);
 		else
-			str = escape_memory(sun->sun_path, strlen(sun->sun_path));
+			str = escape_string(sun->sun_path, strlen(sun->sun_path));
 		tprintf(proc, "{.sun_family = AF_UNIX, .sun_path = %s}", str);
 		free(str);
 		return;

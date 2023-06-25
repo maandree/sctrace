@@ -3,6 +3,8 @@
 sctrace - Trace system calls
 .SH SYNOPSIS
 .B sctrace
+.RB [ -a
+.IR byte-count ]
 .RB [ -o
 .IR trace-output-file ]
 .RB [ -ft ]
@@ -48,12 +50,21 @@ argument rather than the
 .I command
 argument.
 .TP
+.BR -a " "\fIbyte-count\fP
+Limit the displayed number of bytes in any region
+of uninterpreted memory (this excludes strings
+and structures but includes file I/O) to
+.I byte-count
+bytes. The string
+.B inf
+is interpreted to remove previously applied limit.
+.TP
 .B -f
 Recursively trace all new children and threads.
 This option implies
 .BR -t .
 .TP
-.BR -o " "\fItrace-output-file\fI
+.BR -o " "\fItrace-output-file\fP
 Write trace outputs to the file specified in the
 .I trace-output-file
 argument.

@@ -9,7 +9,8 @@ static unsigned long int trace_options = PTRACE_O_EXITKILL | PTRACE_O_TRACESYSGO
 _Noreturn static void
 usage(void)
 {
-	fprintf(stderr, "usage: %s [-o trace-output-file] [-ft] (command | -0 command argv0) [argument] ...\n", argv0);
+	fprintf(stderr, "usage: %s [-a byte-count] [-o trace-output-file] [-ft]"
+	                " (command | -0 command argv0) [argument] ...\n", argv0);
 	exit(1);
 }
 
@@ -123,7 +124,7 @@ handle_event(struct process *proc, int status)
 			proc->state = trace_event == PTRACE_EVENT_CLONE ? CloneParent : ForkParent;
 			handle_syscall(proc);
 		}
-		tprintf(proc2, "\nTracing new process\n");
+		tprintf(proc2, "\nTracing new process with parent %ju\n", (uintmax_t)proc->pid);
 		proc2->state = trace_event == PTRACE_EVENT_FORK ? ForkChild :
 			trace_event == PTRACE_EVENT_VFORK ? VforkChild : CloneChild;
 		handle_syscall(proc2);
@@ -180,16 +181,28 @@ main(int argc, char **argv)
 	char *outfile = NULL;
 	FILE *outfp = stderr;
 	int status, exit_code = 0, with_argv0 = 0, multiprocess = 0, i;
+	char *arg;
 	struct process *proc, *proc2;
 	struct sigaction sa;
 	sigset_t sm;
 
 	/* TODO add option to trace signals with siginfo (-s) */
-	/* TODO add option to truncate long syscall arguments and outputs (-a)
-	 *      This should be useful if your program does a lot of I/O */
 	ARGBEGIN {
 	case '0':
 		with_argv0 = 1;
+		break;
+	case 'a':
+		arg = EARGF(usage());
+		if (!strcmp(arg, "inf")) {
+			abbreviate_memory = SIZE_MAX;
+			break;
+		}
+		if (!isdigit(arg[0]))
+			usage();
+		errno = 0;
+		abbreviate_memory = (size_t)strtoul(arg, &arg, 10);
+		if ((errno && errno != ERANGE) || *arg)
+			usage();
 		break;
 	case 'o':
 		if (outfile)
@@ -286,6 +299,7 @@ main(int argc, char **argv)
 	if (outfp != stderr)
 		fclose(outfp);
 
+	weprintf("Copying exit from %s\n", multiprocess ? "original tracee" : "tracee");
 	if (WIFSIGNALED(exit_code)) {
 		exit_code = WTERMSIG(exit_code);
 		raise(exit_code);

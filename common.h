@@ -115,10 +115,12 @@ const char *get_errno_name(int err);
 const char *get_signum_name(int sig);
 
 /* memory.c */
+extern size_t abbreviate_memory;
 char *get_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp);
 int get_struct(pid_t pid, unsigned long int addr, void *out, size_t size, const char **errorp);
 char *get_memory(pid_t pid, unsigned long int addr, size_t n, const char **errorp);
 char *escape_memory(const char *str, size_t m);
+char *escape_string(const char *str, size_t m);
 char *get_escaped_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp);
 char *get_escaped_memory(pid_t pid, unsigned long int addr, size_t n, const char **errorp);
 

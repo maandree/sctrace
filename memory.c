@@ -2,6 +2,9 @@
 #include "common.h"
 
 
+size_t abbreviate_memory = SIZE_MAX;
+
+
 char *
 get_string(pid_t pid, unsigned long int addr, size_t *lenp, const char **errorp)
 {
@@ -133,8 +136,8 @@ istrigraphfinal(char c)
 }
 
 
-char *
-escape_memory(const char *str, size_t m)
+static char *
+escape(const char *str, size_t m, size_t max)
 {
 	char *ret = NULL;
 	const char *s, *end;
@@ -149,8 +152,10 @@ escape_memory(const char *str, size_t m)
 			eprintf("strdup:");
 		return ret;
 	}
+	if (max > m)
+		max = m;
 	add_char(&ret, &size, &len, '"');
-	for (s = str, end = &str[m]; s != end; s++) {
+	for (s = str, end = &str[max]; s != end; s++) {
 		if (n) {
 			add_char(&ret, &size, &len, *s);
 			n -= 1;
@@ -209,8 +214,27 @@ escape_memory(const char *str, size_t m)
 		need_new_string_hex = 0;
 	}
 	add_char(&ret, &size, &len, '"');
+	if (m > max) {
+		add_char(&ret, &size, &len, '.');
+		add_char(&ret, &size, &len, '.');
+		add_char(&ret, &size, &len, '.');
+	}
 	add_char(&ret, &size, &len, '\0');
 	return ret;
+}
+
+
+char *
+escape_memory(const char *str, size_t m)
+{
+	return escape(str, m, abbreviate_memory);
+}
+
+
+char *
+escape_string(const char *str, size_t m)
+{
+	return escape(str, m, SIZE_MAX);
 }
 
 
@@ -223,7 +247,7 @@ get_escaped_string(pid_t pid, unsigned long int addr, size_t *lenp, const char *
 		return NULL;
 	}
 	r = get_string(pid, addr, lenp, errorp);
-	ret = escape_memory(r, *lenp);
+	ret = escape_string(r, *lenp);
 	free(r);
 	return ret;
 }

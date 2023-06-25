@@ -37,6 +37,10 @@
 # define REGARGS(a, b) a, b
 #endif
 
+#if defined(__arm__) || defined(__thumb__)
+# define USE_PTRACE_SET_SYSCALL
+#endif
+
 
 #ifndef KEY_SPEC_THREAD_KEYRING
 # define KEY_SPEC_THREAD_KEYRING         -1

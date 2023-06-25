@@ -1,6 +1,7 @@
 /* See LICENSE file for copyright and license details. */
 #include "common.h"
 
+#include <linux/close_range.h>
 #include <linux/memfd.h>
 #include <linux/mman.h>
 #include <sys/sysmacros.h>
@@ -107,7 +108,7 @@ print_access_flags(struct process *proc, size_t arg_index)
 }
 
 static void
-print_faccessat_flags(struct process *proc, size_t arg_index)
+print_faccessat2_flags(struct process *proc, size_t arg_index)
 {
 	FLAGS_BEGIN;
 	FLAG(AT_EACCESS);
@@ -560,6 +561,23 @@ print_stack(struct process *proc, size_t arg_index)
 	tprintf(proc, ", .ss_size = %zu}", stack.ss_size);
 }
 
+static void
+print_close_range_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(CLOSE_RANGE_CLOEXEC);
+	FLAG(CLOSE_RANGE_UNSHARE);
+	FLAGS_END;
+}
+
+static void
+print_memfd_secret_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(FD_CLOEXEC);
+	FLAGS_END;
+}
+
 
 static void
 printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
@@ -789,6 +807,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(clone);
 	GENERIC_HANDLER(clone3);
 	SIMPLE(close, "i", Int);
+	FORMATTERS(close_range, "uu1", Int, print_close_range_flags);
 	GENERIC_HANDLER(connect);
 	SIMPLE(copy_file_range, "i&llii&llilux", Long);
 	SIMPLE(creat, "so", Int);
@@ -802,6 +821,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(epoll_ctl);
 	GENERIC_HANDLER(epoll_ctl_old);
 	GENERIC_HANDLER(epoll_pwait);
+	GENERIC_HANDLER(epoll_pwait2);
 	GENERIC_HANDLER(epoll_wait);
 	GENERIC_HANDLER(epoll_wait_old);
 	SIMPLE(eventfd, "i", Int);
@@ -810,7 +830,8 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(execveat);
 	SIMPLE(exit, "i", Int);
 	SIMPLE(exit_group, "i", Int);
-	FORMATTERS(faccessat, "Fs12", Int, print_accept4_flags, print_faccessat_flags);
+	FORMATTERS(faccessat, "Fs1", Int, print_access_flags);
+	FORMATTERS(faccessat2, "Fs12", Int, print_access_flags, print_faccessat2_flags);
 	GENERIC_HANDLER(fadvise64);
 	GENERIC_HANDLER(fallocate);
 	GENERIC_HANDLER(fanotify_init);
@@ -838,6 +859,7 @@ print_systemcall(struct process *proc)
 	SIMPLE(fsync, "i", Int);
 	SIMPLE(ftruncate, "illi", Int);
 	GENERIC_HANDLER(futex);
+	UNDOCUMENTED(futex_waitv);
 	GENERIC_HANDLER(futimesat);
 	GENERIC_HANDLER(get_kernel_syms);
 	GENERIC_HANDLER(get_mempolicy);
@@ -895,6 +917,9 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(kexec_load);
 	GENERIC_HANDLER(keyctl);
 	FORMATTERS(kill, "i1", Int, print_signal_name);
+	GENERIC_HANDLER(landlock_add_rule);
+	GENERIC_HANDLER(landlock_create_ruleset);
+	SIMPLE(landlock_restrict_self, "iu", Int);
 	SIMPLE(lchown, "sii", Int);
 	SIMPLE(lgetxattr, "ss>mlu", Long);
 	SIMPLE(link, "ss", Int);
@@ -911,6 +936,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(mbind);
 	SIMPLE(membarrier, "iii", Int); /* TODO flags */
 	FORMATTERS(memfd_create, "s1", Int, print_memfd_create_flags);
+	FORMATTERS(memfd_secret, "1", Int, print_memfd_secret_flags);
 	GENERIC_HANDLER(migrate_pages);
 	GENERIC_HANDLER(mincore);
 	SIMPLE(mkdir, "so", Int);
@@ -923,6 +949,7 @@ print_systemcall(struct process *proc)
 	SIMPLE(mmap, "pluiiilli", Ptr); /* TODO flags */
 	GENERIC_HANDLER(modify_ldt);
 	GENERIC_HANDLER(mount);
+	GENERIC_HANDLER(mount_setattr);
 	UNDOCUMENTED(move_mount);
 	GENERIC_HANDLER(move_pages);
 	FORMATTERS(mprotect, "plu1", Int, print_mprotect_flags);
@@ -949,9 +976,11 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(open_by_handle_at);
 	UNDOCUMENTED(open_tree);
 	GENERIC_HANDLER(openat);
+	GENERIC_HANDLER(openat2);
 	SIMPLE(pause, "", Int);
 	GENERIC_HANDLER(perf_event_open);
 	GENERIC_HANDLER(personality);
+	SIMPLE(pidfd_getfd, "iiu", Int);
 	SIMPLE(pidfd_open, "iu", Int);
 	GENERIC_HANDLER(pidfd_send_signal);
 	FORMATTERS(pipe, ">1", Int, print_int_pair);
@@ -967,6 +996,8 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(preadv);
 	GENERIC_HANDLER(preadv2);
 	GENERIC_HANDLER(prlimit64);
+	GENERIC_HANDLER(process_madvise);
+	UNDOCUMENTED(process_mrelease);
 	GENERIC_HANDLER(process_vm_readv);
 	GENERIC_HANDLER(process_vm_writev);
 	GENERIC_HANDLER(pselect6);
@@ -977,6 +1008,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(pwritev2);
 	GENERIC_HANDLER(query_module);
 	GENERIC_HANDLER(quotactl);
+	UNIMPLEMENTED(quotactl_fd);
 	SIMPLE(read, "i>mlu", Long);
 	SIMPLE(readahead, "illilu", Long);
 	SIMPLE(readlink, "s>mlu", Long);
@@ -1027,6 +1059,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(sendmsg);
 	GENERIC_HANDLER(sendto);
 	GENERIC_HANDLER(set_mempolicy);
+	UNDOCUMENTED(set_mempolicy_home_node);
 	GENERIC_HANDLER(set_robust_list);
 	GENERIC_HANDLER(set_thread_area);
 	SIMPLE(set_tid_address, "p", Long);

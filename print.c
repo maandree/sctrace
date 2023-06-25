@@ -5,6 +5,7 @@
 #include <linux/mman.h>
 #include <sys/sysmacros.h>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <sys/inotify.h>
 #include <sys/mman.h>
 #include <sys/mount.h>
@@ -14,11 +15,21 @@
 #include <sys/xattr.h>
 #include <fcntl.h>
 #include <sched.h>
+#include <signal.h>
 #include <time.h>
 
 #if defined(__linux__)
 # ifndef CLONE_NEWTIME
 #  define CLONE_NEWTIME 0x00000080
+# endif
+# ifndef SS_ONSTACK
+#  define SS_ONSTACK 1
+# endif
+# ifndef SS_DISABLE
+#  define SS_DISABLE 2
+# endif
+# ifndef SS_AUTODISARM
+#  define SS_AUTODISARM (1U << 31)
 # endif
 #endif
 
@@ -36,6 +47,12 @@
 		char buf[1024] = {0};\
 		char *p = buf;\
 		unsigned long long int flags = proc->args[arg_index]
+
+#define FLAGS_BEGIN_VALUE(VALUE)\
+	do {\
+		char buf[1024] = {0};\
+		char *p = buf;\
+		unsigned long long int flags = (VALUE)
 
 #define FLAG(FLAG)\
 		do {\
@@ -515,6 +532,34 @@ print_pkey_access_rights(struct process *proc, size_t arg_index)
 	FLAGS_END;
 }
 
+static void
+print_eventfd2_flags(struct process *proc, size_t arg_index)
+{
+	FLAGS_BEGIN;
+	FLAG(EFD_CLOEXEC);
+	FLAG(EFD_NONBLOCK);
+	FLAG(EFD_SEMAPHORE);
+	FLAGS_END;
+}
+
+static void
+print_stack(struct process *proc, size_t arg_index)
+{
+	stack_t stack;
+	const char *err;
+	if (get_struct(proc->pid, proc->args[arg_index], &stack, sizeof(stack), &err)) {
+		tprintf(proc, "%s", err);
+		return;
+	}
+	tprintf(proc, "{.ss_sp = %p, .ss_flags = ", stack.ss_sp);
+	FLAGS_BEGIN_VALUE(stack.ss_flags);
+	FLAG(SS_ONSTACK);
+	FLAG(SS_DISABLE);
+	FLAG(SS_AUTODISARM);
+	FLAGS_END;
+	tprintf(proc, ", .ss_size = %zu}", stack.ss_size);
+}
+
 
 static void
 printf_systemcall(struct process *proc, const char *scall, const char *fmt, ...)
@@ -745,7 +790,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(clone3);
 	SIMPLE(close, "i", Int);
 	GENERIC_HANDLER(connect);
-	GENERIC_HANDLER(copy_file_range);
+	SIMPLE(copy_file_range, "i&llii&llilux", Long);
 	SIMPLE(creat, "so", Int);
 	SIMPLE(create_module, "slu", Ptr);
 	FORMATTERS(delete_module, "s1", Int, print_delete_module_flags);
@@ -759,8 +804,8 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(epoll_pwait);
 	GENERIC_HANDLER(epoll_wait);
 	GENERIC_HANDLER(epoll_wait_old);
-	GENERIC_HANDLER(eventfd);
-	GENERIC_HANDLER(eventfd2);
+	SIMPLE(eventfd, "i", Int);
+	FORMATTERS(eventfd2, "i1", Int, print_eventfd2_flags);
 	GENERIC_HANDLER(execve);
 	GENERIC_HANDLER(execveat);
 	SIMPLE(exit, "i", Int);
@@ -809,7 +854,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(getitimer);
 	GENERIC_HANDLER(getpeername);
 	SIMPLE(getpgid, "i", Int);
-	GENERIC_HANDLER(getpgrp);
+	SIMPLE(getpgrp, "", Int);
 	SIMPLE(getpid, "", Int);
 	UNIMPLEMENTED(getpmsg);
 	SIMPLE(getppid, "", Int);
@@ -1010,7 +1055,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(shmdt);
 	GENERIC_HANDLER(shmget);
 	FORMATTERS(shutdown, "i1", Int, print_shutdown_flag);
-	GENERIC_HANDLER(sigaltstack);
+	FORMATTERS(sigaltstack, "1>1", Int, print_stack);
 	GENERIC_HANDLER(signalfd);
 	GENERIC_HANDLER(signalfd4);
 	SIMPLE(socket, "iii", Int); /* TODO flags */

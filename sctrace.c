@@ -125,7 +125,7 @@ restart_process(struct process *proc, int cmd, int sig)
 	if (ptrace(cmd, proc->pid, NULL, sig)) {
 		eprintf("ptrace %s %ju NULL %i:",
 		        cmd == PTRACE_CONT ? "PTRACE_CONT" :
-		        cmd == PTRACE_LISTEN ? "PTRACE_LISTN" :
+		        cmd == PTRACE_LISTEN ? "PTRACE_LISTEN" :
 		        cmd == PTRACE_SYSEMU ? "PTRACE_SYSEMU" :
 		        cmd == PTRACE_SYSCALL ? "PTRACE_SYSCALL" : "???",
 		        (uintmax_t)proc->pid, sig);
@@ -228,7 +228,7 @@ handle_event(struct process *proc, int status)
 		case SIGTTIN:
 		case SIGTTOU:
 			process_signalled(proc, sig, 1);
-			restart_process(proc, PTRACE_LISTEN, 0);
+			restart_process(proc, PTRACE_LISTEN, 0); /* TODO LISTEN only forks if SEIZED (original tracee) */
 			break;
 		default:
 			tprintf(proc, "\nTRACE_EVENT_STOP with signal %i (%s: %s)\n",

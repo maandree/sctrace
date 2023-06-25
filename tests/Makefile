@@ -2,6 +2,7 @@
 
 BIN_64 =\
 	abort.64\
+	abort-nodump.64\
 	cont.64\
 	exec.64\
 	exit.64\
@@ -13,6 +14,7 @@ BIN_64 =\
 	raise.64\
 	siginfo.64\
 	signal.64\
+	signal-interrupt.64\
 	stop.64\
 	threads.64\
 	tstp.64\

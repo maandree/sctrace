@@ -1,6 +1,8 @@
 /* See LICENSE file for copyright and license details. */
 #include <asm/unistd.h>
+#include <sys/prctl.h>
 #include <sys/uio.h>
+#include <asm/unistd.h>
 #include <sys/wait.h>
 #include <ctype.h>
 #include <errno.h>
@@ -65,15 +67,9 @@ enum type {
 };
 
 enum state {
-	Normal,
-	Syscall,
-	CloneChild,
-	ForkChild,
-	VforkChild,
-	CloneParent,
-	ForkParent,
-	VforkParent,
-	Exec
+	UserSpace,
+	KernelSpace,
+	Zombie
 };
 
 struct output {
@@ -89,7 +85,7 @@ struct process {
 	struct process *next;
 	struct process *prev;
 	enum state state;
-	int silent_until_execed; /* 2 until exec, 1 until "= 0", 0 afterwards */
+	int ignore_until_execed; /* 2 until exec, 1 until "= 0", 0 afterwards */
 
 	/* Syscall data */
 	unsigned long long int scall;
@@ -131,7 +127,7 @@ void print_systemcall_exit(struct process *proc);
 /* process.c */
 void init_process_list(void);
 struct process *find_process(pid_t pid);
-struct process *add_process(pid_t pid, unsigned long int trace_options);
+struct process *add_process(pid_t pid, pid_t leader, unsigned long int trace_options);
 void remove_process(struct process *proc);
 
 /* util.c */

@@ -25,7 +25,7 @@ void
 tprintf(struct process *proc, const char *fmt, ...)
 {
 	va_list ap;
-	if (proc->silent_until_execed)
+	if (proc->ignore_until_execed)
 		return;
 	if (fmt[0] == '\n' && fmt[1]) {
 		last_pid = 0;

@@ -864,7 +864,7 @@ print_nonconst_sockaddr(struct process *proc, size_t arg_index)
 	socklen_t saved_len;
 	void *mem;
 	const char *err;
-	if (proc->state == Syscall) {
+	if (proc->state == KernelSpace) {
 		/* on return */
 		saved_len = (socklen_t)proc->save[arg_index + 1];
 		len = len < saved_len ? len : saved_len;

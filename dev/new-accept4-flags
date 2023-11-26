@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+cd -- "$(dirname -- "$0")"
+
+cat ../print.c | \
+	sed '1,/^print_accept4_flags\s*(/d;1,/^\s*FLAGS_BEGIN\b/d;/^\s*FLAGS_END\b/q' | \
+	sed '$d' | tr \(\) ,, | cut -d , -f 2 | sort \
+	> .accept4-flags.old
+
+cat /usr/include/bits/socket_type.h | tr '\t' ' ' | \
+	grep ' *SOCK_.*= *0[0-9x]' | grep -o 'SOCK_[^ =]*' | sort \
+	> .accept4-flags.new
+
+exec diff -u .accept4-flags.old .accept4-flags.new

@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+cd -- "$(dirname -- "$0")"
+
+cat ../print.c | \
+	sed '1,/^print_systemcall\s*(/d;1,/^\s*switch\s*(/d;/^\s*default\s*:/q' | \
+	sed '$d' | tr \(\) ,, | cut -d , -f 2 | sort \
+	> .syscalls.old
+
+(cat /usr/include/bits/syscall.h | \
+	grep '#\s*define' | grep -o 'SYS[^ ]*' | cut -d _ -f 2-; \
+	cat .syscalls.old) | \
+	sort | uniq \
+	> .syscalls.new
+
+exec diff -u .syscalls.old .syscalls.new

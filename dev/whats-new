@@ -1,0 +1,13 @@
+#!/bin/sh
+cd -- "$(dirname -- "$0")"
+status=0
+for cmd in \
+	new-syscalls \
+	new-accept4-flags \
+	new-access-flags
+do
+	if ! ./$cmd; then
+		status=1
+	fi
+done
+exit $status

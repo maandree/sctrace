@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+cd -- "$(dirname -- "$0")"
+
+cat ../print.c | \
+	sed '1,/^print_access_flags\s*(/d;1,/^\s*FLAGS_BEGIN\b/d;/^\s*FLAGS_END_DEFAULT\b/q' | \
+	tr \(\) ,, | cut -d , -f 2 | sort \
+	> .access-flags.old
+
+cat /usr/include/unistd.h | tr '\t' ' ' | \
+	grep ' *[^ ]\+_OK\b' | grep -o '[^ ]\+_OK' | sort \
+	> .access-flags.new
+
+exec diff -u .access-flags.old .access-flags.new

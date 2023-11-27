@@ -23,7 +23,7 @@
 #endif
 
 #define RETURN_IS_ERROR(RET)\
-	((RET) > -(unsigned long long int)PAGE_SIZE) /* Don't know the actual limit, but this seems safe */
+	((RET) > -(unsigned long long int)4096) /* I guess Linux promises to never use a smaller page size */
 
 #if defined(__x86_64__) && !defined(__IPL32__)
 # include "x86-64.h"

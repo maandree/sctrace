@@ -1097,7 +1097,7 @@ print_systemcall(struct process *proc)
 	GENERIC_HANDLER(bpf);
 	// UNIMPLEMENTED(break);
 	// UNIMPLEMENTED(breakpoint);
-	SIMPLE(brk, "p", Int);
+	SIMPLE(brk, "p", Ptr);
 	// UNIMPLEMENTED(cachectl);
 	// GENERIC_HANDLER(cacheflush);
 	GENERIC_HANDLER(capget);
